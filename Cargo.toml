@@ -1,0 +1,20 @@
+[package]
+name = "genedbot"
+version = "0.1.0"
+authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
+edition = "2018"
+
+[dependencies]
+mediawiki = "0.1.7"
+#mediawiki = { path = "../mediawiki" }
+wikibase = { path = "../wikibase_rs" }
+#bio = "0.25.0"
+bio = { path = "../rust-bio" }
+reqwest = "0.9.11"
+serde_json = "1.0.39"
+libflate = "0.1.21"
+config = "0.9.2"
+
+#lazy_static = "1"
+#regex = "1"
+#chrono = "0.4.6"
