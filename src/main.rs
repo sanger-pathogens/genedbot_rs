@@ -67,6 +67,8 @@ pub struct GeneDBot {
     ec: EntityContainer,
     api: mediawiki::api::Api,
     chr2q: HashMap<String, String>,
+    genedb2q: HashMap<String, String>,
+    alternate_gene_subclasses: HashMap<String, String>,
 }
 
 impl GeneDBot {
@@ -80,6 +82,18 @@ impl GeneDBot {
             ec: EntityContainer::new(),
             api: mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap(),
             chr2q: HashMap::new(),
+            genedb2q: HashMap::new(),
+            alternate_gene_subclasses: vec![
+                ("tRNA", "Q201448"),
+                ("rRNA", "Q215980"),
+                ("pseudogene", "Q277338"),
+                ("snoRNA", "Q284416"),
+                ("ncRNA", "Q427087"),
+                ("snRNA", "Q284578"),
+            ]
+            .iter()
+            .map(|x| (x.0.to_string(), x.1.to_string()))
+            .collect(),
         }
     }
 
@@ -261,12 +275,64 @@ impl GeneDBot {
                 }
                 None => {}
             });
-        println!("{:?}", &self.chr2q);
         Ok(())
     }
 
-    fn load_basic_items(&mut self) -> Result<(), Box<Error>> {
+    fn parent_taxon_q(&self) -> Option<String> {
+        let species_q = self.species_q();
+        let species_i = self.ec.get_entity(species_q.clone())?;
+        match species_i.values_for_property("P171").first() {
+            Some(v) => match v {
+                Value::Entity(entity) => Some(entity.id().to_string()),
+                _ => None,
+            },
+            None => None,
+        }
+    }
+
+    pub fn load_basic_items_genes(&mut self) -> Result<(), Box<Error>> {
+        let mut species_list = vec![self.species_q()];
+        match self.parent_taxon_q() {
+            Some(parent_q) => species_list.push(parent_q),
+            None => {}
+        }
+        let species_list = format!(" VALUES ?species {{ wd:{} }} ", species_list.join(" wd:"));
+
+        let alternate_gene_subclasses_values: Vec<String> = self
+            .alternate_gene_subclasses
+            .iter()
+            .map(|(_, v)| v.to_owned())
+            .collect();
+        let gene_p31 = format!(
+            " VALUES ?gene_types {{ wd:Q7187 wd:{} }} ",
+            alternate_gene_subclasses_values.join(" wd:")
+        );
+
+        let sparql = format!("SELECT DISTINCT ?q ?genedb {{ {} . {} . ?q wdt:P31 ?gene_types  ; wdt:P703 ?species ; wdt:P3382 ?genedb }}",&species_list,&gene_p31) ;
+        let res = self.api.sparql_query(&sparql)?;
+        self.genedb2q = res["results"]["bindings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|b| b["q"]["value"].as_str().is_some())
+            .filter(|b| b["genedb"]["value"].as_str().is_some())
+            .map(|b| {
+                let entity_url = b["q"]["value"].as_str().unwrap();
+                let q = self
+                    .api
+                    .extract_entity_from_uri(entity_url)
+                    .unwrap()
+                    .to_string();
+                let genedb_id = b["genedb"]["value"].as_str().unwrap().to_string();
+                (genedb_id, q)
+            })
+            .collect();
+        Ok(())
+    }
+
+    pub fn load_basic_items(&mut self) -> Result<(), Box<Error>> {
         self.load_basic_items_chr()?;
+        self.load_basic_items_genes()?;
         Ok(())
     }
 
