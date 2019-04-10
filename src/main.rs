@@ -68,7 +68,11 @@ pub struct GeneDBot {
     api: mediawiki::api::Api,
     chr2q: HashMap<String, String>,
     genedb2q: HashMap<String, String>,
+    protein_genedb2q: HashMap<String, String>,
+    evidence_codes_labels: HashMap<String, String>,
+    evidence_codes: HashMap<String, String>,
     alternate_gene_subclasses: HashMap<String, String>,
+    pub specific_genes_only: Option<Vec<String>>,
 }
 
 impl GeneDBot {
@@ -83,6 +87,10 @@ impl GeneDBot {
             api: mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap(),
             chr2q: HashMap::new(),
             genedb2q: HashMap::new(),
+            protein_genedb2q: HashMap::new(),
+            evidence_codes_labels: HashMap::new(),
+            evidence_codes: HashMap::new(),
+            specific_genes_only: None,
             alternate_gene_subclasses: vec![
                 ("tRNA", "Q201448"),
                 ("rRNA", "Q215980"),
@@ -290,6 +298,35 @@ impl GeneDBot {
         }
     }
 
+    fn sparql_result_to_pairs(
+        &self,
+        j: &serde_json::Value,
+        k1: &str,
+        k2: &str,
+    ) -> Vec<(String, String)> {
+        j.as_array()
+            .unwrap()
+            .iter()
+            .filter(|b| b[k1]["value"].as_str().is_some())
+            .filter(|b| b[k2]["value"].as_str().is_some())
+            .map(|b| {
+                let v1 = b[k1]["value"].as_str().unwrap();
+                let v1 = self
+                    .api
+                    .extract_entity_from_uri(v1)
+                    .unwrap_or(v1.to_string())
+                    .to_string();
+                let v2 = b[k2]["value"].as_str().unwrap();
+                let v2 = self
+                    .api
+                    .extract_entity_from_uri(v2)
+                    .unwrap_or(v2.to_string())
+                    .to_string();
+                (v1, v2)
+            })
+            .collect()
+    }
+
     pub fn load_basic_items_genes(&mut self) -> Result<(), Box<Error>> {
         let mut species_list = vec![self.species_q()];
         match self.parent_taxon_q() {
@@ -308,31 +345,77 @@ impl GeneDBot {
             alternate_gene_subclasses_values.join(" wd:")
         );
 
-        let sparql = format!("SELECT DISTINCT ?q ?genedb {{ {} . {} . ?q wdt:P31 ?gene_types  ; wdt:P703 ?species ; wdt:P3382 ?genedb }}",&species_list,&gene_p31) ;
+        // Genes
+        let sparql = format!("SELECT DISTINCT ?q ?genedb {{ {} . {} . ?q wdt:P31 ?gene_types ; wdt:P703 ?species ; wdt:P3382 ?genedb }}",&species_list,&gene_p31) ;
         let res = self.api.sparql_query(&sparql)?;
-        self.genedb2q = res["results"]["bindings"]
+        self.genedb2q = self
+            .sparql_result_to_pairs(&res["results"]["bindings"], "genedb", "q")
+            .into_iter()
+            .collect();
+
+        // Proteins
+        let sparql = format!("SELECT DISTINCT ?q ?genedb {{ {} . ?q wdt:P31 wd:Q8054 ; wdt:P703 ?species ; wdt:P3382 ?genedb }}",&species_list) ;
+        let res = self.api.sparql_query(&sparql)?;
+        self.protein_genedb2q = self
+            .sparql_result_to_pairs(&res["results"]["bindings"], "genedb", "q")
+            .into_iter()
+            .collect();
+        Ok(())
+    }
+
+    pub fn load_evidence_codes(&mut self) -> Result<(), Box<Error>> {
+        let sparql = "SELECT DISTINCT ?q ?qLabel ?qAltLabel { ?q wdt:P31 wd:Q23173209 SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\" } }" ;
+        let res = self.api.sparql_query(&sparql)?;
+        res["results"]["bindings"]
             .as_array()
             .unwrap()
             .iter()
             .filter(|b| b["q"]["value"].as_str().is_some())
-            .filter(|b| b["genedb"]["value"].as_str().is_some())
-            .map(|b| {
-                let entity_url = b["q"]["value"].as_str().unwrap();
-                let q = self
-                    .api
-                    .extract_entity_from_uri(entity_url)
-                    .unwrap()
-                    .to_string();
-                let genedb_id = b["genedb"]["value"].as_str().unwrap().to_string();
-                (genedb_id, q)
-            })
-            .collect();
+            .filter(|b| b["qLabel"]["value"].as_str().is_some())
+            .for_each(|b| {
+                let q = b["q"]["value"].as_str().unwrap();
+                let q = self.api.extract_entity_from_uri(q).unwrap().to_string();
+                let label = b["qLabel"]["value"].as_str().unwrap_or("").to_string();
+                let alt_label = b["qAltLabel"]["value"].as_str().unwrap_or("").to_string();
+                self.evidence_codes_labels
+                    .insert(self.normalize_evidence_label(&alt_label), q.clone());
+                self.evidence_codes.insert(label, q.clone());
+            });
+        Ok(())
+    }
+
+    fn normalize_evidence_label(&self, s: &String) -> String {
+        s.trim().to_lowercase()
+    }
+
+    fn get_gene_entities_to_process(&self) -> Vec<String> {
+        match &self.specific_genes_only {
+            Some(_genes) => vec![],
+            None => self
+                .genedb2q
+                .iter()
+                .map(|(_, v)| v.to_owned())
+                .chain(self.protein_genedb2q.iter().map(|(_, v)| v.to_owned()))
+                .collect(),
+        }
+    }
+
+    pub fn load_basic_items_entities(&mut self) -> Result<(), Box<Error>> {
+        let mut items_to_load: Vec<String> = self.get_gene_entities_to_process().to_vec();
+        self.evidence_codes
+            .iter()
+            .map(|(_, v)| v.to_owned())
+            .for_each(|s| items_to_load.push(s));
+        //println!("Loading {} items", items_to_load.len());
+        self.ec.load_entities(&self.api, &items_to_load)?;
         Ok(())
     }
 
     pub fn load_basic_items(&mut self) -> Result<(), Box<Error>> {
         self.load_basic_items_chr()?;
         self.load_basic_items_genes()?;
+        self.load_evidence_codes()?;
+        self.load_basic_items_entities()?;
         Ok(())
     }
 
@@ -342,7 +425,6 @@ impl GeneDBot {
         let species_q = self.species_q();
         let _species_i = self.ec.load_entity(&self.api, species_q)?;
         self.find_genomic_assembly()?;
-        println!("Genomic assembly: {}", self.genomic_assembly_q);
         self.load_basic_items()?;
         Ok(())
     }
@@ -351,7 +433,8 @@ impl GeneDBot {
 fn main() {
     let args: Vec<_> = env::args().collect();
     if args.len() < 2 {
-        panic!("Argument (species key) required\n");
+        println!("Argument (species key) required\n");
+        return;
     }
     let species_key = &args[1];
 
@@ -361,7 +444,11 @@ fn main() {
     let lgpass = settings.get_str("user.pass").unwrap();
 
     let mut bot = GeneDBot::new();
+    if args.len() == 3 {
+        bot.specific_genes_only = Some(vec![args[2].to_string()]);
+    }
     bot.api.login(lgname, lgpass).unwrap();
+    //println!("is bot: {}", bot.api.user().is_bot());
     bot.load_config_file(species_key)
         .expect("Can't load config file");
     //println!("{:?}", &bot.config);

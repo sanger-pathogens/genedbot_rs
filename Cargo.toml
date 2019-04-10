@@ -5,7 +5,7 @@ authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
 edition = "2018"
 
 [dependencies]
-mediawiki = "0.1.7"
+mediawiki = "0.1.8"
 #mediawiki = { path = "../mediawiki" }
 wikibase = { path = "../wikibase_rs" }
 #bio = "0.25.0"
