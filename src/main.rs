@@ -1,11 +1,13 @@
 #[macro_use]
 extern crate serde_json;
+extern crate chrono;
 extern crate config;
 extern crate libflate;
 extern crate mediawiki;
 extern crate reqwest;
 
 use bio::io::{gaf, gff};
+use chrono::Local;
 use config::{Config, File};
 use libflate::gzip::Decoder;
 use std::collections::HashMap;
@@ -443,16 +445,135 @@ impl GeneDBot {
         }
     }
 
+    fn get_or_create_chromosome_entity(&mut self, id: &str) -> Option<&String> {
+        match self.chr2q.get(id) {
+            Some(q) => Some(q),
+            None => {
+                println!("TODO create new item for chromosome '{}'", id);
+                None
+            }
+        }
+    }
+
     fn process_gene(&mut self, genedb_id: String) {
-        let gene_q = match self.get_entity_id_for_genedb_id(&genedb_id) {
+        let _gene_q = match self.get_entity_id_for_genedb_id(&genedb_id) {
             Some(q) => q,
             None => return,
         };
-        let gene_i = match self.get_entity_for_genedb_id(&genedb_id) {
-            Some(i) => i,
+        let gff = match self.gff.get(&genedb_id) {
+            Some(gff) => gff.clone(),
             None => return,
         };
-        dbg!(gene_q);
+        let gene_type = match gff.feature_type() {
+            "gene" => ("gene", "Q7187"),
+            "pseudogene" => ("pseudogene", "Q277338"),
+            other => {
+                println!("Gene {} has unknown type {}", &genedb_id, other);
+                return;
+            }
+        };
+        dbg!(&gff);
+        let mut item = Entity::new_empty_item();
+        let _item_to_diff = match self.get_entity_for_genedb_id(&genedb_id) {
+            Some(i) => i.clone(),
+            None => Entity::new_empty_item(),
+        };
+        let chr_q = self
+            .get_or_create_chromosome_entity(gff.seqname())
+            .unwrap()
+            .to_owned();
+
+        // Labels and aliases
+        match gff.attributes().get("Name") {
+            Some(name) => {
+                item.set_label(LocaleString::new("en", name));
+                item.add_alias(LocaleString::new("en", &self.fix_alias_name(&genedb_id)));
+            }
+            None => item.set_label(LocaleString::new("en", &genedb_id)),
+        };
+        vec!["previous_systematic_id", "synonym", "alias"]
+            .iter()
+            .for_each(|key| {
+                match gff.attributes().get(&key.to_string()) {
+                    Some(ids) => ids.split(',').for_each(|id| {
+                        item.add_alias(LocaleString::new("en", &self.fix_alias_name(id)))
+                    }),
+                    None => {}
+                };
+            });
+
+        // Statements
+        let today = Local::now();
+        let reference = Reference::new(vec![
+            Snak::new_item("P248", "Q5531047"),
+            Snak::new_time(
+                "P813",
+                &format!("{}", today.format("+%Y-%m-%dT00:00:00Z")),
+                11,
+            ),
+        ]);
+        let ga_quals = vec![
+            Snak::new_item("P659", &self.genomic_assembly_q),
+            Snak::new_item("P1057", &chr_q),
+        ];
+        /*
+        let strand_q = match gff.strand() {
+            "+" => "Q22809680",
+            _ => "Q22809711",
+        };
+        */
+
+        // Instance of
+        item.add_claim(Statement::new_normal(
+            Snak::new_item("P31", gene_type.1),
+            vec![],
+            vec![reference.clone()],
+        ));
+
+        // Found in:Species
+        item.add_claim(Statement::new_normal(
+            Snak::new_item("P703", &self.species_q()),
+            vec![],
+            vec![reference.clone()],
+        ));
+
+        // Chromosome
+        item.add_claim(Statement::new_normal(
+            Snak::new_item("P1057", &chr_q),
+            vec![],
+            vec![reference.clone()],
+        ));
+
+        /*
+        $gene_i->addClaim ( $gene_i->newClaim('P2548',$gene_i->newItem($strand_q) , [$refs] , $ga_quals ) ) ; # Strand
+        */
+
+        // GeneDB ID
+        item.add_claim(Statement::new_normal(
+            Snak::new_string("P3382", &genedb_id),
+            vec![],
+            vec![reference.clone()],
+        ));
+
+        // Genomic start
+        item.add_claim(Statement::new_normal(
+            Snak::new_string("P644", &gff.start().to_string()),
+            ga_quals.clone(),
+            vec![reference.clone()],
+        ));
+
+        // Genomic end
+        item.add_claim(Statement::new_normal(
+            Snak::new_string("P645", &gff.end().to_string()),
+            ga_quals.clone(),
+            vec![reference.clone()],
+        ));
+
+        println!("{}", serde_json::to_string_pretty(&item).unwrap());
+    }
+
+    fn fix_alias_name(&self, name: &str) -> String {
+        name.split(";").next().unwrap().to_string()
     }
 
     pub fn run(&mut self) -> Result<(), Box<Error>> {
