@@ -516,12 +516,6 @@ impl GeneDBot {
             Snak::new_item("P659", &self.genomic_assembly_q),
             Snak::new_item("P1057", &chr_q),
         ];
-        /*
-        let strand_q = match gff.strand() {
-            "+" => "Q22809680",
-            _ => "Q22809711",
-        };
-        */
 
         // Instance of
         item.add_claim(Statement::new_normal(
@@ -544,9 +538,23 @@ impl GeneDBot {
             vec![reference.clone()],
         ));
 
-        /*
-        $gene_i->addClaim ( $gene_i->newClaim('P2548',$gene_i->newItem($strand_q) , [$refs] , $ga_quals ) ) ; # Strand
-        */
+        // Strand
+        match gff.strand() {
+            Some(strand) => match strand.strand_symbol() {
+                "+" => item.add_claim(Statement::new_normal(
+                    Snak::new_item("P2548", "Q22809680"),
+                    vec![],
+                    vec![reference.clone()],
+                )),
+                "-" => item.add_claim(Statement::new_normal(
+                    Snak::new_item("P2548", "Q22809711"),
+                    vec![],
+                    vec![reference.clone()],
+                )),
+                _ => {}
+            },
+            _ => {}
+        }
 
         // GeneDB ID
         item.add_claim(Statement::new_normal(
