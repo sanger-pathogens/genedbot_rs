@@ -400,6 +400,13 @@ impl GeneDBot {
         }
     }
 
+    fn get_gene_ids_to_process(&self) -> Vec<String> {
+        match &self.specific_genes_only {
+            Some(genes) => genes.clone(),
+            None => self.genedb2q.iter().map(|(q, _)| q.to_owned()).collect(),
+        }
+    }
+
     pub fn load_basic_items_entities(&mut self) -> Result<(), Box<Error>> {
         let mut items_to_load: Vec<String> = self.get_gene_entities_to_process().to_vec();
         self.evidence_codes
@@ -419,9 +426,45 @@ impl GeneDBot {
         Ok(())
     }
 
+    fn get_entity_id_for_genedb_id(&self, id: &String) -> Option<String> {
+        match self.genedb2q.get(id) {
+            Some(q) => Some(q.to_string()),
+            None => match self.protein_genedb2q.get(id) {
+                Some(q) => Some(q.to_string()),
+                None => None,
+            },
+        }
+    }
+
+    fn get_entity_for_genedb_id(&mut self, id: &String) -> Option<&wikibase::Entity> {
+        match self.get_entity_id_for_genedb_id(&id.to_string()) {
+            Some(q) => self.ec.load_entity(&self.api, q).ok(),
+            None => None,
+        }
+    }
+
+    fn process_gene(&mut self, genedb_id: String) {
+        let gene_q = match self.get_entity_id_for_genedb_id(&genedb_id) {
+            Some(q) => q,
+            None => return,
+        };
+        let gene_i = match self.get_entity_for_genedb_id(&genedb_id) {
+            Some(i) => i,
+            None => return,
+        };
+        dbg!(gene_q);
+    }
+
+    pub fn run(&mut self) -> Result<(), Box<Error>> {
+        self.get_gene_ids_to_process()
+            .iter()
+            .for_each(|genedb_id| self.process_gene(genedb_id.to_string()));
+        Ok(())
+    }
+
     pub fn init(&mut self) -> Result<(), Box<Error>> {
-        //self.load_gff_file().expect("Can't load GFF file");
-        //self.load_gaf_file().expect("Can't load GAF file");
+        self.load_gff_file().expect("Can't load GFF file");
+        self.load_gaf_file().expect("Can't load GAF file");
         let species_q = self.species_q();
         let _species_i = self.ec.load_entity(&self.api, species_q)?;
         self.find_genomic_assembly()?;
@@ -453,4 +496,5 @@ fn main() {
         .expect("Can't load config file");
     //println!("{:?}", &bot.config);
     bot.init().unwrap();
+    bot.run().unwrap();
 }
