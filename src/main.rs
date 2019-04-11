@@ -1,16 +1,21 @@
 #[macro_use]
+extern crate lazy_static;
+#[macro_use]
 extern crate serde_json;
 extern crate chrono;
 extern crate config;
 extern crate libflate;
 extern crate mediawiki;
+extern crate regex;
 extern crate reqwest;
 
 use bio::io::{gaf, gff};
 use chrono::Local;
 use config::{Config, File};
 use libflate::gzip::Decoder;
-use std::collections::HashMap;
+use percent_encoding::percent_decode;
+use regex::Regex;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::{error::Error, fmt};
 use wikibase::entity_container::*;
@@ -31,6 +36,9 @@ impl fmt::Display for GeneDBotError {
         write!(f, "Oh no")
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct Literature {}
 
 #[derive(Debug, Clone)]
 pub struct GeneDBotConfig {
@@ -74,6 +82,7 @@ pub struct GeneDBot {
     evidence_codes_labels: HashMap<String, String>,
     evidence_codes: HashMap<String, String>,
     alternate_gene_subclasses: HashMap<String, String>,
+    other_types: HashMap<String, HashMap<String, Option<bio::io::gff::Record>>>,
     pub specific_genes_only: Option<Vec<String>>,
 }
 
@@ -92,6 +101,7 @@ impl GeneDBot {
             protein_genedb2q: HashMap::new(),
             evidence_codes_labels: HashMap::new(),
             evidence_codes: HashMap::new(),
+            other_types: HashMap::new(),
             specific_genes_only: None,
             alternate_gene_subclasses: vec![
                 ("tRNA", "Q201448"),
@@ -156,22 +166,119 @@ impl GeneDBot {
     }
 
     pub fn load_gff_file_from_url(&mut self, url: &str) -> Result<(), Box<Error>> {
+        let mut orth_ids: HashSet<String> = HashSet::new();
         let mut res = reqwest::get(url)?;
         let decoder = Decoder::new(&mut res)?;
         let mut reader = gff::Reader::new(decoder, gff::GffType::GFF3);
         for element in reader.records() {
             match element {
                 Ok(e) => {
-                    if e.attributes().contains_key("ID") {
-                        let id = e.attributes()["ID"].clone();
-                        self.gff.insert(id, e);
-                    }
+                    self.process_gff_element(&e, &mut orth_ids);
                 }
                 _ => continue,
             }
         }
+
+        if self.gff.is_empty() {
+            panic!("Can't get GFF data from {}", url);
+        }
         //println!("{:?}", &self.gff);
+
+        self.load_orthologs(orth_ids);
         Ok(())
+    }
+
+    fn load_orthologs(&mut self, mut orth_ids: HashSet<String>) {
+        if orth_ids.is_empty() {
+            return;
+        }
+        let orth_ids: Vec<String> = orth_ids.drain().collect();
+        for chunk in orth_ids.chunks(100) {
+            dbg!(&chunk);
+        }
+        panic!("!!");
+    }
+
+    fn fix_id(&self, id: &str) -> String {
+        lazy_static! {
+            static ref RE1: Regex = Regex::new(r":.*$").unwrap();
+            static ref RE2: Regex = Regex::new(r"\.\d$").unwrap();
+        }
+        let id2 = RE1.replace_all(id, "").into_owned();
+        RE2.replace_all(&id2, "").into_owned()
+    }
+
+    fn set_other_types(&mut self, element: &bio::io::gff::Record, id: &str) {
+        let id = self.fix_id(id);
+        let o = match self.alternate_gene_subclasses.get(element.feature_type()) {
+            Some(_) => Some(element.clone()),
+            None => None,
+        };
+        self.other_types
+            .entry(element.feature_type().to_string())
+            .or_insert(HashMap::new())
+            .insert(id, o);
+    }
+
+    fn process_gff_element(
+        &mut self,
+        element: &bio::io::gff::Record,
+        orth_ids: &mut HashSet<String>,
+    ) {
+        lazy_static! {
+            static ref VALID_GENE_TYPES: Vec<&'static str> = vec!["gene", "mRNA", "pseudogene"];
+            static ref RE_ORTH: Regex = Regex::new(r"^\s*\S+?:(\S+)").unwrap();
+        }
+
+        if element.attributes().contains_key("ID") {
+            let id = element.attributes()["ID"].clone();
+            self.gff.insert(id, element.clone());
+        }
+
+        if !VALID_GENE_TYPES.contains(&element.feature_type()) {
+            match element.attributes().get("ID") {
+                Some(id) => {
+                    self.set_other_types(&element, id);
+                    match element.attributes().get("Parent") {
+                        Some(parent_id) => self.set_other_types(&element, parent_id),
+                        None => {}
+                    }
+                }
+                None => {}
+            }
+        }
+
+        // SKIPPING genes from PHP
+
+        // Orthologs
+        match &self.specific_genes_only {
+            Some(genes) => match element.attributes().get("ID") {
+                Some(id) => {
+                    // TODO HACKISH
+                    let mut id = id.clone();
+                    id.pop();
+                    id.pop();
+                    if !genes.contains(&id) {
+                        return;
+                    }
+                }
+                None => return,
+            },
+            None => {}
+        }
+        match element.attributes().get("orthologous_to") {
+            Some(orth) => {
+                let orth = percent_decode(orth.as_bytes()).decode_utf8().unwrap();
+                println!("{}", &orth);
+                let v: Vec<&str> = orth.split(',').collect();
+                v.iter().filter(|o| RE_ORTH.is_match(o)).for_each(|o| {
+                    RE_ORTH.captures_iter(o).for_each(|m| {
+                        orth_ids.insert(m[1].to_string());
+                    });
+                });
+            }
+            None => {}
+        }
     }
 
     pub fn load_gaf_file_from_url(&mut self, url: &str) -> Result<(), Box<Error>> {
@@ -577,7 +684,78 @@ impl GeneDBot {
             vec![reference.clone()],
         ));
 
+        let protein_entity_ids = self.process_proteins(&genedb_id);
+        if protein_entity_ids.len() > 0 {
+            // Subclass of:protein-coding gene
+            item.add_claim(Statement::new_normal(
+                Snak::new_item("P279", "Q20747295"),
+                vec![],
+                vec![reference.clone()],
+            ));
+
+            // Encodes: protein
+            for protein_q in protein_entity_ids {
+                item.add_claim(Statement::new_normal(
+                    Snak::new_item("P688", &protein_q),
+                    vec![],
+                    vec![reference.clone()],
+                ));
+            }
+        } else if gene_type.0 != "gene" {
+            item.add_claim(Statement::new_normal(
+                Snak::new_item("P688", gene_type.1),
+                vec![],
+                vec![reference.clone()],
+            ));
+        } else {
+            let mut subclass_found: bool = false;
+            for subclass in &self.alternate_gene_subclasses {
+                let class_name = subclass.0;
+                let _class_q = subclass.1;
+                let ct = match self.other_types.get(&class_name.to_owned()) {
+                    Some(ct) => ct,
+                    None => continue,
+                };
+                match ct.get(&genedb_id) {
+                    Some(_feature_type) => {
+                        subclass_found = true;
+                        let mut fake_literature: Vec<Literature> = vec![];
+                        self.process_product(
+                            &gff,
+                            &mut item,
+                            &mut fake_literature,
+                            &genedb_id,
+                            &reference,
+                        );
+                    }
+                    None => {}
+                };
+            }
+            if !subclass_found {
+                self.log(&genedb_id, "No subclass found");
+            }
+        }
+
         println!("{}", serde_json::to_string_pretty(&item).unwrap());
+    }
+
+    fn log(&self, genedb_id: &String, message: &str) {
+        println!("!! {}: {}", genedb_id, message);
+    }
+
+    fn process_product(
+        &self,
+        _data: &bio::io::gff::Record,
+        _item: &mut Entity,
+        _literature: &mut Vec<Literature>,
+        _genedb_id: &String,
+        _references: &Reference,
+    ) {
+
+    }
+
+    fn process_proteins(&mut self, _genedb_id: &String) -> Vec<String> {
+        vec![]
     }
 
     fn fix_alias_name(&self, name: &str) -> String {
