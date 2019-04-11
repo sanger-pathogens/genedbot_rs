@@ -83,6 +83,8 @@ pub struct GeneDBot {
     evidence_codes: HashMap<String, String>,
     alternate_gene_subclasses: HashMap<String, String>,
     other_types: HashMap<String, HashMap<String, Option<bio::io::gff::Record>>>,
+    orth_genedb2q: HashMap<String, String>,
+    orth_genedb2q_taxon: HashMap<String, String>,
     pub specific_genes_only: Option<Vec<String>>,
 }
 
@@ -102,6 +104,8 @@ impl GeneDBot {
             evidence_codes_labels: HashMap::new(),
             evidence_codes: HashMap::new(),
             other_types: HashMap::new(),
+            orth_genedb2q: HashMap::new(),
+            orth_genedb2q_taxon: HashMap::new(),
             specific_genes_only: None,
             alternate_gene_subclasses: vec![
                 ("tRNA", "Q201448"),
@@ -184,19 +188,39 @@ impl GeneDBot {
         }
         //println!("{:?}", &self.gff);
 
-        self.load_orthologs(orth_ids);
+        self.load_orthologs(orth_ids).unwrap(); //TODO
         Ok(())
     }
 
-    fn load_orthologs(&mut self, mut orth_ids: HashSet<String>) {
+    fn load_orthologs(
+        &mut self,
+        mut orth_ids: HashSet<String>,
+    ) -> Result<(), Box<::std::error::Error>> {
         if orth_ids.is_empty() {
-            return;
+            return Ok(());
         }
         let orth_ids: Vec<String> = orth_ids.drain().collect();
         for chunk in orth_ids.chunks(100) {
-            dbg!(&chunk);
+            let sparql = format!("SELECT ?q ?genedb ?taxon {{ VALUES ?genedb {{'{}'}} . ?q wdt:P3382 ?genedb ; wdt:P703 ?taxon }}",chunk.join("' '"));
+            let sparql_result = self.api.sparql_query(&sparql)?;
+            for b in sparql_result["results"]["bindings"].as_array().unwrap() {
+                let q = match b["q"]["value"].as_str() {
+                    Some(s) => self.api.extract_entity_from_uri(s).unwrap(),
+                    None => continue,
+                };
+                let taxon_q = match b["taxon"]["value"].as_str() {
+                    Some(s) => self.api.extract_entity_from_uri(s).unwrap(),
+                    None => continue,
+                };
+                let genedb = match b["genedb"]["value"].as_str() {
+                    Some(s) => s.to_string(),
+                    None => continue,
+                };
+                self.orth_genedb2q.insert(genedb.to_string(), q);
+                self.orth_genedb2q_taxon.insert(genedb.to_string(), taxon_q);
+            }
         }
-        panic!("!!");
+        Ok(())
     }
 
     fn fix_id(&self, id: &str) -> String {
@@ -269,7 +293,6 @@ impl GeneDBot {
         match element.attributes().get("orthologous_to") {
             Some(orth) => {
                 let orth = percent_decode(orth.as_bytes()).decode_utf8().unwrap();
-                println!("{}", &orth);
                 let v: Vec<&str> = orth.split(',').collect();
                 v.iter().filter(|o| RE_ORTH.is_match(o)).for_each(|o| {
                     RE_ORTH.captures_iter(o).for_each(|m| {
