@@ -85,6 +85,7 @@ pub struct GeneDBot {
     other_types: HashMap<String, HashMap<String, Option<bio::io::gff::Record>>>,
     orth_genedb2q: HashMap<String, String>,
     orth_genedb2q_taxon: HashMap<String, String>,
+    parent2child: HashMap<String, Vec<(String, String)>>,
     pub specific_genes_only: Option<Vec<String>>,
 }
 
@@ -106,6 +107,7 @@ impl GeneDBot {
             other_types: HashMap::new(),
             orth_genedb2q: HashMap::new(),
             orth_genedb2q_taxon: HashMap::new(),
+            parent2child: HashMap::new(),
             specific_genes_only: None,
             alternate_gene_subclasses: vec![
                 ("tRNA", "Q201448"),
@@ -186,7 +188,6 @@ impl GeneDBot {
         if self.gff.is_empty() {
             panic!("Can't get GFF data from {}", url);
         }
-        //println!("{:?}", &self.gff);
 
         self.load_orthologs(orth_ids).unwrap(); //TODO
         Ok(())
@@ -251,12 +252,19 @@ impl GeneDBot {
     ) {
         lazy_static! {
             static ref VALID_GENE_TYPES: Vec<&'static str> = vec!["gene", "mRNA", "pseudogene"];
-            static ref RE_ORTH: Regex = Regex::new(r"^\s*\S+?:(\S+)").unwrap();
         }
 
         if element.attributes().contains_key("ID") {
             let id = element.attributes()["ID"].clone();
-            self.gff.insert(id, element.clone());
+            self.gff.insert(id.clone(), element.clone());
+            match element.attributes().get("Parent") {
+                Some(parent_id) => self
+                    .parent2child
+                    .entry(parent_id.to_string())
+                    .or_insert(vec![])
+                    .push((id.clone(), element.feature_type().to_string())),
+                None => {}
+            }
         }
 
         if !VALID_GENE_TYPES.contains(&element.feature_type()) {
@@ -271,8 +279,6 @@ impl GeneDBot {
                 None => {}
             }
         }
-
-        // SKIPPING genes from PHP
 
         // Orthologs
         match &self.specific_genes_only {
@@ -290,18 +296,43 @@ impl GeneDBot {
             },
             None => {}
         }
-        match element.attributes().get("orthologous_to") {
-            Some(orth) => {
-                let orth = percent_decode(orth.as_bytes()).decode_utf8().unwrap();
-                let v: Vec<&str> = orth.split(',').collect();
-                v.iter().filter(|o| RE_ORTH.is_match(o)).for_each(|o| {
-                    RE_ORTH.captures_iter(o).for_each(|m| {
-                        orth_ids.insert(m[1].to_string());
-                    });
-                });
-            }
-            None => {}
+        self.get_orthologs_from_gff_element(&element)
+            .iter()
+            .for_each(|x| {
+                orth_ids.insert(x.1.to_owned());
+            });
+    }
+
+    // Returns (species,genedb_id)
+    fn get_orthologs_from_gff_element(&self, gff: &bio::io::gff::Record) -> Vec<(String, String)> {
+        lazy_static! {
+            static ref RE_ORTH: Regex = Regex::new(r"^\s*(\S*):(\S+)").unwrap();
         }
+        match gff.attributes().get("orthologous_to") {
+            Some(orth) => {
+                let orth = self.fix_attribute_value(orth);
+                let v: Vec<&str> = orth.split(',').collect();
+                v.iter()
+                    .filter(|o| RE_ORTH.is_match(o))
+                    .map(|o| {
+                        RE_ORTH
+                            .captures_iter(o)
+                            .map(|m| return (m[1].to_string(), m[2].to_string()))
+                            .next()
+                    })
+                    .filter(|o| o.is_some())
+                    .map(|o| o.unwrap())
+                    .collect()
+            }
+            None => vec![],
+        }
+    }
+
+    fn fix_attribute_value(&self, s: &str) -> String {
+        percent_decode(s.as_bytes())
+            .decode_utf8()
+            .unwrap()
+            .to_string()
     }
 
     pub fn load_gaf_file_from_url(&mut self, url: &str) -> Result<(), Box<Error>> {
@@ -315,7 +346,9 @@ impl GeneDBot {
                 _ => continue,
             }
         }
-        //println!("{:?}", &self.gaf);
+        if self.gaf.is_empty() {
+            panic!("Can't get GAF data from {}", url);
+        }
         Ok(())
     }
 
@@ -347,19 +380,18 @@ impl GeneDBot {
             None => return err1,
         };
 
-        let references = self.references();
         let qualifiers = vec![];
         let mut new_item = Entity::new_empty_item();
         new_item.set_label(LocaleString::new("en", &(taxon_name + " reference genome")));
         new_item.add_claim(Statement::new_normal(
             Snak::new_item("P279", "Q7307127"),
             qualifiers.clone(),
-            references.clone(),
+            self.references(),
         ));
         new_item.add_claim(Statement::new_normal(
             Snak::new_item("P703", species_q.as_str()),
             qualifiers.clone(),
-            references.clone(),
+            self.references(),
         ));
 
         let params = EntityDiffParams::all();
@@ -604,7 +636,7 @@ impl GeneDBot {
         };
         dbg!(&gff);
         let mut item = Entity::new_empty_item();
-        let _item_to_diff = match self.get_entity_for_genedb_id(&genedb_id) {
+        let item_to_diff = match self.get_entity_for_genedb_id(&genedb_id) {
             Some(i) => i.clone(),
             None => Entity::new_empty_item(),
         };
@@ -647,51 +679,21 @@ impl GeneDBot {
             Snak::new_item("P1057", &chr_q),
         ];
 
-        // Instance of
-        item.add_claim(Statement::new_normal(
-            Snak::new_item("P31", gene_type.1),
-            vec![],
-            vec![reference.clone()],
-        ));
+        let mut statements_to_create = vec![
+            Snak::new_item("P31", gene_type.1),        // Instance of
+            Snak::new_item("P703", &self.species_q()), // Found in:Species
+            Snak::new_item("P1057", &chr_q),           // Chromosome
+            Snak::new_string("P3382", &genedb_id),
+        ];
 
-        // Found in:Species
-        item.add_claim(Statement::new_normal(
-            Snak::new_item("P703", &self.species_q()),
-            vec![],
-            vec![reference.clone()],
-        ));
-
-        // Chromosome
-        item.add_claim(Statement::new_normal(
-            Snak::new_item("P1057", &chr_q),
-            vec![],
-            vec![reference.clone()],
-        ));
-
-        // Strand
         match gff.strand() {
             Some(strand) => match strand.strand_symbol() {
-                "+" => item.add_claim(Statement::new_normal(
-                    Snak::new_item("P2548", "Q22809680"),
-                    vec![],
-                    vec![reference.clone()],
-                )),
-                "-" => item.add_claim(Statement::new_normal(
-                    Snak::new_item("P2548", "Q22809711"),
-                    vec![],
-                    vec![reference.clone()],
-                )),
+                "+" => statements_to_create.push(Snak::new_item("P2548", "Q22809680")),
+                "-" => statements_to_create.push(Snak::new_item("P2548", "Q22809711")),
                 _ => {}
             },
             _ => {}
         }
-
-        // GeneDB ID
-        item.add_claim(Statement::new_normal(
-            Snak::new_string("P3382", &genedb_id),
-            vec![],
-            vec![reference.clone()],
-        ));
 
         // Genomic start
         item.add_claim(Statement::new_normal(
@@ -709,27 +711,14 @@ impl GeneDBot {
 
         let protein_entity_ids = self.process_proteins(&genedb_id);
         if protein_entity_ids.len() > 0 {
-            // Subclass of:protein-coding gene
-            item.add_claim(Statement::new_normal(
-                Snak::new_item("P279", "Q20747295"),
-                vec![],
-                vec![reference.clone()],
-            ));
+            statements_to_create.push(Snak::new_item("P279", "Q20747295")); // Subclass of:protein-coding gene
 
             // Encodes: protein
-            for protein_q in protein_entity_ids {
-                item.add_claim(Statement::new_normal(
-                    Snak::new_item("P688", &protein_q),
-                    vec![],
-                    vec![reference.clone()],
-                ));
+            for protein_q in &protein_entity_ids {
+                statements_to_create.push(Snak::new_item("P688", &protein_q));
             }
         } else if gene_type.0 != "gene" {
-            item.add_claim(Statement::new_normal(
-                Snak::new_item("P688", gene_type.1),
-                vec![],
-                vec![reference.clone()],
-            ));
+            statements_to_create.push(Snak::new_item("P688", gene_type.1));
         } else {
             let mut subclass_found: bool = false;
             for subclass in &self.alternate_gene_subclasses {
@@ -755,11 +744,80 @@ impl GeneDBot {
                 };
             }
             if !subclass_found {
-                self.log(&genedb_id, "No subclass found");
+                self.log(
+                    &genedb_id,
+                    &format!("No subclass found for {:?}", &gene_type),
+                );
             }
         }
 
-        println!("{}", serde_json::to_string_pretty(&item).unwrap());
+        // Orthologs
+        if protein_entity_ids.len() > 0 {
+            self.parent2child
+                .get(&genedb_id)
+                .unwrap_or(&vec![])
+                .iter()
+                .filter(|o| o.1 == "mRNA")
+                .for_each(|o| match self.gff.get(&o.0) {
+                    Some(protein) => {
+                        self.get_orthologs_from_gff_element(&protein)
+                            .iter()
+                            .for_each(|(_species, protein_genedb_id)| {
+                                match self.orth_genedb2q.get(protein_genedb_id) {
+                                    Some(orth_q) => {
+                                        match self.orth_genedb2q_taxon.get(protein_genedb_id) {
+                                            Some(orth_q_taxon) => {
+                                                item.add_claim(Statement::new_normal(
+                                                    Snak::new_item("P684", orth_q),
+                                                    vec![Snak::new_item("P703", orth_q_taxon)],
+                                                    vec![reference.clone()],
+                                                ));
+                                            }
+                                            None => {}
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            });
+                    }
+                    None => {}
+                });
+        }
+
+        // Create simple (single-reference-only) statements
+        statements_to_create.iter().for_each(|s| {
+            item.add_claim(Statement::new_normal(
+                s.to_owned(),
+                vec![],
+                vec![reference.clone()],
+            ))
+        });
+
+        // Apply diff
+        let my_props = vec![
+            "P279",  // Subclass of (mostly to remove protein-coding gene)
+            "P703",  // Found in taxon
+            "P680",  // Molecular function
+            "P681",  // Cell component
+            "P682",  // Biological process
+            "P684",  // Ortholog
+            "P1057", // Chromosome
+            "P2548", // Strand orientation
+            "P644",  // Genomic start
+            "P645",  // Genomic end
+        ];
+        let mut params = EntityDiffParams::none();
+        params.labels = EntityDiffParam::some(&vec!["en"]);
+        params.descriptions = EntityDiffParam::some(&vec!["en"]);
+        params.aliases = EntityDiffParam::some(&vec!["en"]);
+        params.claims.add = EntityDiffParamState::All;
+        params.claims.alter = EntityDiffParamState::All;
+        params.claims.remove = EntityDiffParamState::some(&my_props);
+
+        let diff = EntityDiff::new(&item_to_diff, &item, &params);
+        println!("{}", diff.actions());
+
+        //println!("{}", serde_json::to_string_pretty(&item).unwrap());
     }
 
     fn log(&self, genedb_id: &String, message: &str) {
@@ -774,11 +832,32 @@ impl GeneDBot {
         _genedb_id: &String,
         _references: &Reference,
     ) {
-
+        // TODO
     }
 
-    fn process_proteins(&mut self, _genedb_id: &String) -> Vec<String> {
-        vec![]
+    fn process_proteins(&mut self, genedb_id: &String) -> Vec<String> {
+        let protein_genedb_ids: Vec<String> = self
+            .parent2child
+            .get(&genedb_id.clone())
+            .unwrap_or(&vec![])
+            .iter()
+            .filter(|child| child.1 == "mRNA")
+            .map(|child| child.0.to_owned())
+            .collect();
+        protein_genedb_ids
+            .iter()
+            .map(|protein_genedb_id| self.process_protein(&genedb_id, &protein_genedb_id))
+            .filter(|entry| entry.is_some())
+            .map(|entry| entry.unwrap())
+            .collect()
+    }
+
+    fn process_protein(
+        &mut self,
+        _genedb_id: &String,
+        _protein_genedb_id: &String,
+    ) -> Option<String> {
+        Some("Q12345".to_string())
     }
 
     fn fix_alias_name(&self, name: &str) -> String {
