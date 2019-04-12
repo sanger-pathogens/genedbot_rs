@@ -618,10 +618,6 @@ impl GeneDBot {
     }
 
     fn process_gene(&mut self, genedb_id: String) {
-        let _gene_q = match self.get_entity_id_for_genedb_id(&genedb_id) {
-            Some(q) => q,
-            None => return,
-        };
         let gff = match self.gff.get(&genedb_id) {
             Some(gff) => gff.clone(),
             None => return,
@@ -634,7 +630,7 @@ impl GeneDBot {
                 return;
             }
         };
-        dbg!(&gff);
+
         let mut item = Entity::new_empty_item();
         let item_to_diff = match self.get_entity_for_genedb_id(&genedb_id) {
             Some(i) => i.clone(),
@@ -813,9 +809,21 @@ impl GeneDBot {
         params.claims.add = EntityDiffParamState::All;
         params.claims.alter = EntityDiffParamState::All;
         params.claims.remove = EntityDiffParamState::some(&my_props);
+        params.references.list.push((
+            EntityDiffParamState::some(&my_props),
+            EntityDiffParamState::except(&vec!["P813"]),
+        ));
 
         let diff = EntityDiff::new(&item_to_diff, &item, &params);
         println!("{}", diff.actions());
+
+        // TODO apply diff/create new (plus, update internal matches and add protein=>gene)
+        /*
+        let _gene_q = match self.get_entity_id_for_genedb_id(&genedb_id) {
+            Some(q) => q,
+            None => return,
+        };
+        */
 
         //println!("{}", serde_json::to_string_pretty(&item).unwrap());
     }
