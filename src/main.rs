@@ -166,7 +166,7 @@ impl GeneDBot {
 
     pub fn gaf_url(&self) -> String {
         format!(
-            "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/{}/{}.gaf",
+            "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/{}/{}.gaf.gz",
             self.species_key, self.species_key
         )
     }
@@ -336,8 +336,9 @@ impl GeneDBot {
     }
 
     pub fn load_gaf_file_from_url(&mut self, url: &str) -> Result<(), Box<Error>> {
-        let res = reqwest::get(url)?;
-        let mut reader = gaf::Reader::new(res, gaf::GafType::GAF2);
+        let mut res = reqwest::get(url)?;
+        let decoder = Decoder::new(&mut res)?;
+        let mut reader = gaf::Reader::new(decoder, gaf::GafType::GAF2);
         for element in reader.records() {
             match element {
                 Ok(e) => {
@@ -802,6 +803,7 @@ impl GeneDBot {
             "P644",  // Genomic start
             "P645",  // Genomic end
         ];
+
         let mut params = EntityDiffParams::none();
         params.labels = EntityDiffParam::some(&vec!["en"]);
         params.descriptions = EntityDiffParam::some(&vec!["en"]);
@@ -882,8 +884,8 @@ impl GeneDBot {
     pub fn init(&mut self) -> Result<(), Box<Error>> {
         self.load_gff_file().expect("Can't load GFF file");
         self.load_gaf_file().expect("Can't load GAF file");
-        let species_q = self.species_q();
-        let _species_i = self.ec.load_entity(&self.api, species_q)?;
+        //let species_q = self.species_q();
+        //let _species_i = self.ec.load_entity(&self.api, species_q)?;
         self.find_genomic_assembly()?;
         self.load_basic_items()?;
         Ok(())
