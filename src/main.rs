@@ -37,8 +37,9 @@ impl fmt::Display for GeneDBotError {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Literature {}
+//#[derive(Debug, Clone)]
+//pub struct Literature {}
+type Literature = String;
 
 #[derive(Debug, Clone)]
 pub struct GeneDBotConfig {
@@ -864,10 +865,55 @@ impl GeneDBot {
 
     fn process_protein(
         &mut self,
-        _genedb_id: &String,
-        _protein_genedb_id: &String,
+        _gene_genedb_id: &String,
+        protein_genedb_id: &String,
     ) -> Option<String> {
-        Some("Q12345".to_string())
+        let gff = match self.gff.get(protein_genedb_id) {
+            Some(gff) => gff.clone(),
+            None => return None,
+        };
+        let mut _label = protein_genedb_id.clone();
+        let mut _desc = String::from("");
+
+        let mut item = Entity::new_empty_item();
+        let _item_to_diff = match self.get_entity_for_genedb_id(&protein_genedb_id) {
+            Some(i) => i.clone(),
+            None => Entity::new_empty_item(),
+        };
+
+        let today = Local::now();
+        let _reference = Reference::new(vec![
+            Snak::new_item("P248", "Q5531047"),
+            Snak::new_time(
+                "P813",
+                &format!("{}", today.format("+%Y-%m-%dT00:00:00Z")),
+                11,
+            ),
+        ]);
+
+        let mut literature: Vec<Literature> = vec![];
+
+        match gff.attributes().get("literature") {
+            Some(lit) => lit.split(',').for_each(|l| literature.push(l.to_string())),
+            None => {}
+        }
+
+        self.add_go_annotation(&mut item, &gff, &mut literature);
+
+        None
+    }
+
+    fn add_go_annotation(
+        &self,
+        _item: &mut Entity,
+        gff: &bio::io::gff::Record,
+        _literature: &mut Vec<Literature>,
+    ) {
+        let protein_genedb_id = gff.attributes()["ID"].clone();
+        let gaf = match self.gaf.get(&protein_genedb_id) {
+            Some(gaf) => gaf,
+            None => return,
+        };
     }
 
     fn fix_alias_name(&self, name: &str) -> String {
