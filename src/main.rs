@@ -88,6 +88,7 @@ pub struct GeneDBot {
     orth_genedb2q_taxon: HashMap<String, String>,
     parent2child: HashMap<String, Vec<(String, String)>>,
     paper2q: HashMap<(String, String), String>,
+    xref2prop: HashMap<String, String>,
     aspects: HashMap<String, String>,
     go_term2q: HashMap<String, String>,
     pub specific_genes_only: Option<Vec<String>>,
@@ -116,6 +117,10 @@ impl GeneDBot {
             go_term2q: HashMap::new(),
             specific_genes_only: None,
             aspects: vec![("P", "P682"), ("F", "P680"), ("C", "P681")]
+                .iter()
+                .map(|x| (x.0.to_string(), x.1.to_string()))
+                .collect(),
+            xref2prop: vec![("UniProtKB", "P352")]
                 .iter()
                 .map(|x| (x.0.to_string(), x.1.to_string()))
                 .collect(),
@@ -764,7 +769,7 @@ impl GeneDBot {
             statements_to_create.push(Snak::new_item("P688", gene_type.1));
         } else {
             let mut subclass_found: bool = false;
-            for subclass in &self.alternate_gene_subclasses {
+            for subclass in self.alternate_gene_subclasses.clone() {
                 let class_name = subclass.0;
                 let _class_q = subclass.1;
                 let ct = match self.other_types.get(&class_name.to_owned()) {
@@ -881,14 +886,136 @@ impl GeneDBot {
     }
 
     fn process_product(
-        &self,
-        _data: &bio::io::gff::Record,
-        _item: &mut Entity,
-        _literature: &mut Vec<Literature>,
-        _genedb_id: &String,
-        _references: &Reference,
+        &mut self,
+        gff: &bio::io::gff::Record,
+        item: &mut Entity,
+        literature: &mut Vec<Literature>,
+        genedb_id: &String,
+        reference: &Reference,
     ) {
-        // TODO
+        match gff.attributes().get_vec("Dbxref") {
+            Some(xrefs) => {
+                xrefs.iter().for_each(|xref| {
+                    let parts: Vec<&str> = xref.split(':').collect();
+                    if parts.len() == 2 {
+                        match self.xref2prop.get(parts[0]) {
+                            Some(prop) => item.add_claim(Statement::new_normal(
+                                Snak::new_string(prop.clone(), parts[1].to_string()),
+                                vec![],
+                                vec![reference.clone()],
+                            )),
+                            None => {}
+                        }
+                    }
+                });
+            }
+            None => {}
+        }
+
+        lazy_static! {
+            static ref RE1: Regex = Regex::new(r"^(.+?)=(.+)$").unwrap();
+            static ref RE2: Regex = Regex::new(r"^term=(.+)$").unwrap();
+            //static ref RE3: Regex = Regex::new(r"^with=InterPro:(.+)$").unwrap(); // Deactivated; applies to family?
+        }
+
+        let mut apk: HashMap<String, String> = HashMap::new();
+        match gff.attributes().get_vec("product") {
+            Some(products) => {
+                products.iter().for_each(|product| {
+                    RE1.captures_iter(product).for_each(|m| {
+                        apk.insert(m[1].to_string(), m[2].to_string());
+                    });
+                    RE2.captures_iter(product)
+                        .for_each(|m| match item.label_in_locale("en") {
+                            Some(label) => {
+                                if label == genedb_id {
+                                    item.set_label(LocaleString::new("en", &m[1]));
+                                    item.add_alias(LocaleString::new("en", &genedb_id));
+                                } else {
+                                    item.add_alias(LocaleString::new("en", &genedb_id));
+                                }
+                            }
+                            None => item.add_alias(LocaleString::new("en", &genedb_id)),
+                        });
+                });
+            }
+            None => {}
+        }
+        self.set_evidence(&apk, item, literature);
+    }
+
+    fn set_evidence(
+        &mut self,
+        apk: &HashMap<String, String>,
+        item: &mut Entity,
+        literature: &mut Vec<Literature>,
+    ) {
+        if !apk.contains_key("evidence") {
+            return;
+        } // Why is this?
+
+        let reference = Reference::new(vec![
+            Snak::new_item("P1640", "Q5531047"),
+            self.new_time_today(),
+        ]);
+        let mut qualifiers = vec![];
+
+        match apk.get("evidence") {
+            Some(evidence) => {
+                match self
+                    .evidence_codes_labels
+                    .get(&self.normalize_evidence_label(evidence))
+                {
+                    Some(ecq) => qualifiers.push(Snak::new_item("P459", ecq)),
+                    None => {}
+                }
+            }
+            None => {}
+        }
+        match apk.get("term") {
+            Some(term) => qualifiers.push(Snak::new_string("P1810", term)),
+            None => {}
+        }
+        match apk.get("with") {
+            Some(with) => {
+                let parts: Vec<&str> = with.split('|').collect();
+                match self.get_with_from_qualifier(&parts) {
+                    Some(qual) => qualifiers.push(qual),
+                    None => {}
+                }
+            }
+            None => {}
+        }
+
+        lazy_static! {
+            static ref RE1: Regex = Regex::new(r"^(PMID):(.+)$").unwrap();
+        }
+
+        let mut lit_q: Option<String> = None;
+        match apk.get("db_xref") {
+            Some(xref) => {
+                RE1.captures_iter(xref).for_each(|m| {
+                    let k = m[1].to_string();
+                    let v = m[2].to_string();
+                    literature.push(format!("{}|{}", k, v).to_string());
+                    lit_q = self.get_or_create_paper_item(&k, &v);
+                });
+            }
+            None => {}
+        }
+
+        match lit_q {
+            Some(q) => item.add_claim(Statement::new_normal(
+                Snak::new_item("P1343", &q),
+                qualifiers,
+                vec![reference],
+            )),
+            None => item.add_claim(Statement::new_normal(
+                Snak::new_unknown_value("P1343", SnakDataType::SomeValue),
+                qualifiers,
+                vec![reference],
+            )),
+        }
     }
 
     fn process_proteins(&mut self, genedb_id: &String) -> Vec<String> {
@@ -910,23 +1037,21 @@ impl GeneDBot {
 
     fn process_protein(
         &mut self,
-        _gene_genedb_id: &String,
+        gene_genedb_id: &String,
         protein_genedb_id: &String,
     ) -> Option<String> {
         let gff = match self.gff.get(protein_genedb_id) {
             Some(gff) => gff.clone(),
             None => return None,
         };
-        //let mut label = protein_genedb_id.clone();
-        let mut _desc = String::from("");
 
         let mut item = Entity::new_empty_item();
-        let _item_to_diff = match self.get_entity_for_genedb_id(&protein_genedb_id) {
+        let item_to_diff = match self.get_entity_for_genedb_id(&protein_genedb_id) {
             Some(i) => i.clone(),
             None => Entity::new_empty_item(),
         };
 
-        let _reference = Reference::new(vec![
+        let reference = Reference::new(vec![
             Snak::new_item("P248", "Q5531047"),
             self.new_time_today(),
         ]);
@@ -940,7 +1065,55 @@ impl GeneDBot {
 
         item.set_label(LocaleString::new("en", &protein_genedb_id.clone()));
 
+        let mut statements_to_create = vec![
+            Snak::new_item("P31", "Q8054"),            // Instance of:Protein
+            Snak::new_item("P279", "Q8054"),           // Subclass of:Protein
+            Snak::new_item("P703", &self.species_q()), // Found in:Species
+            Snak::new_string("P3382", &protein_genedb_id),
+        ];
+
+        // Encoded by:gene
+        match self.get_entity_for_genedb_id(&gene_genedb_id) {
+            Some(q) => statements_to_create.push(Snak::new_item("P702", q.id())),
+            None => {}
+        }
+
+        self.process_product(
+            &gff,
+            &mut item,
+            &mut literature,
+            &protein_genedb_id,
+            &reference,
+        );
+        //$this->processProduct ( $protein , $protein_i , $literature , $genedb_id , $refs ) ;
+
         self.add_go_annotation(&mut item, &gff, &mut literature);
+
+        // Apply diff
+        let my_props = vec![
+            //"P1343", // Decribed by source; CAREFUL!
+            "P703",  // Found in taxon
+            "P1057", // Chromosome
+            "P2548", // Strand orientation
+            "P644",  // Genomic start
+            "P645",  // Genomic end
+            "P680", "P681", "P682",
+        ];
+
+        let mut params = EntityDiffParams::none();
+        params.labels = EntityDiffParam::some(&vec!["en"]);
+        params.descriptions = EntityDiffParam::some(&vec!["en"]);
+        params.aliases = EntityDiffParam::some(&vec!["en"]);
+        params.claims.add = EntityDiffParamState::All;
+        params.claims.alter = EntityDiffParamState::All;
+        params.claims.remove = EntityDiffParamState::some(&my_props);
+        params.references.list.push((
+            EntityDiffParamState::some(&my_props),
+            EntityDiffParamState::except(&vec!["P813"]),
+        ));
+
+        let diff = EntityDiff::new(&item_to_diff, &item, &params);
+        println!("\nPROTEIN:\n{}", diff.actions());
 
         None
     }
