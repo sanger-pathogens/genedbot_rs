@@ -204,7 +204,7 @@ impl GeneDBot {
             panic!("Can't get GFF data from {}", url);
         }
 
-        self.load_orthologs(orth_ids).unwrap(); //TODO
+        self.load_orthologs(orth_ids)?;
         Ok(())
     }
 
@@ -409,7 +409,7 @@ impl GeneDBot {
     }
 
     fn references(&self) -> Vec<Reference> {
-        // TODO
+        // TODO?
         vec![]
     }
 
@@ -868,7 +868,7 @@ impl GeneDBot {
         ));
 
         let diff = EntityDiff::new(&item_to_diff, &item, &params);
-        println!("{}", diff.actions());
+        println!("\nGENE:\n{}", diff.actions());
 
         // TODO apply diff/create new (plus, update internal matches and add protein=>gene)
         /*
@@ -1085,7 +1085,6 @@ impl GeneDBot {
             &protein_genedb_id,
             &reference,
         );
-        //$this->processProduct ( $protein , $protein_i , $literature , $genedb_id , $refs ) ;
 
         self.add_go_annotation(&mut item, &gff, &mut literature);
 
@@ -1114,6 +1113,8 @@ impl GeneDBot {
 
         let diff = EntityDiff::new(&item_to_diff, &item, &params);
         println!("\nPROTEIN:\n{}", diff.actions());
+
+        // TODO apply diff/create new (plus, update internal matches and add protein=>gene)
 
         None
     }
@@ -1208,7 +1209,7 @@ impl GeneDBot {
                     .collect();
 
                 let new_claim_key = json!([aspect_p.clone(), go_q.clone(), qualifiers.clone()]);
-                let new_claim_key = new_claim_key.as_str().unwrap().to_string();
+                let new_claim_key = serde_json::to_string(&new_claim_key).unwrap();
                 if new_go_claims.contains_key(&new_claim_key) {
                     let ngc = new_go_claims.get_mut(&new_claim_key).unwrap();
                     for r in references {
