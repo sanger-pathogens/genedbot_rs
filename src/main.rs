@@ -890,8 +890,43 @@ impl GeneDBot {
             });
     }
 
-    fn link_protein_to_gene(&mut self, _protein_q: &String, _gene_q: &String) {
+    fn is_item(&self, q: &String) -> bool {
+        lazy_static! {
+            static ref RE1: Regex = Regex::new(r"^Q\d+$").unwrap();
+        }
+        RE1.is_match(q)
+    }
+
+    fn link_protein_to_gene(&mut self, protein_q: &String, gene_q: &String) {
+        if !self.is_item(gene_q) || !self.is_item(protein_q) {
+            return;
+        }
+        match self
+            .ec
+            .load_entities(&self.api, &vec![gene_q.clone(), protein_q.clone()])
+        {
+            Ok(_) => {}
+            _ => return,
+        }
+        let gene_i = match self.ec.get_entity(gene_q.as_str()) {
+            Some(i) => i.clone(),
+            None => return,
+        };
+        let protein_i = match self.ec.get_entity(protein_q.as_str()) {
+            Some(i) => i.clone(),
+            None => return,
+        };
+        if !gene_i.has_target_entity("P688".to_string(), protein_q.to_string()) {
+            self.link_items("P688", &gene_i, protein_q.to_string());
+        }
+        if !protein_i.has_target_entity("P702".to_string(), gene_q.to_string()) {
+            self.link_items("P702", &protein_i, gene_q.to_string());
+        }
+    }
+
+    fn link_items(&mut self, property: &str, item: &Entity, target_q: String) {
         // TODO
+        println!("{} ={}=> {}", item.id(), &property, &target_q);
     }
 
     fn log(&self, genedb_id: &String, message: &str) {
@@ -1010,7 +1045,7 @@ impl GeneDBot {
                 RE1.captures_iter(xref).for_each(|m| {
                     let k = m[1].to_string();
                     let v = m[2].to_string();
-                    literature.insert(format!("{}|{}", k, v).to_string());
+                    literature.insert(format!("{}:{}", k, v).to_string());
                     lit_q = self.get_or_create_paper_item(&k, &v);
                 });
             }
@@ -1057,11 +1092,15 @@ impl GeneDBot {
             Some(gff) => gff.clone(),
             None => return None,
         };
-        println!("{:?}", &gff);
+
         let mut item = Entity::new_empty_item();
         let item_to_diff = match self.get_entity_for_genedb_id(&protein_genedb_id) {
             Some(i) => i.clone(),
             None => Entity::new_empty_item(),
+        };
+        let edit_target = match self.get_entity_for_genedb_id(&protein_genedb_id) {
+            Some(i) => EditTarget::Entity(i.id().to_string()),
+            None => EditTarget::New("item".to_string()),
         };
 
         let reference = Reference::new(vec![
@@ -1092,6 +1131,15 @@ impl GeneDBot {
             Some(q) => statements_to_create.push(Snak::new_item("P702", q.id())),
             None => {}
         }
+
+        // Create simple (single-reference-only) statements
+        statements_to_create.iter().for_each(|s| {
+            item.add_claim(Statement::new_normal(
+                s.to_owned(),
+                vec![],
+                vec![reference.clone()],
+            ))
+        });
 
         self.process_product(
             &gff,
@@ -1130,7 +1178,23 @@ impl GeneDBot {
         self.protein_edit_validator(&mut diff);
         println!("\nPROTEIN:\n{}", diff.actions());
 
-        // TODO apply diff/create new (plus, update internal matches and add protein=>gene)
+        match EntityDiff::apply_diff(&mut self.api, &diff, edit_target) {
+            Ok(json) => match EntityDiff::get_entity_id(&json) {
+                Some(q) => match self.ec.set_entity_from_json(&json) {
+                    Ok(_) => {
+                        self.genedb2q.insert(protein_genedb_id.to_string(), q);
+                    }
+                    Err(err) => {
+                        self.log(
+                            &protein_genedb_id,
+                            &format!("Could not update entity container from JSON: {:?}", &err),
+                        );
+                    }
+                },
+                None => self.log(&protein_genedb_id, "Applying diff returned nothing"),
+            },
+            _ => {}
+        }
 
         self.get_entity_id_for_genedb_id(&protein_genedb_id)
     }
@@ -1200,13 +1264,7 @@ impl GeneDBot {
                         }
                         "PMID" => {
                             match self.get_or_create_paper_item(k, v) {
-                                Some(paper_q) => {
-                                    let lit_key = format!("{}|{}", k, v) ;
-                                    if !literature.contains(&lit_key) {
-                                        literature_sources.push(Snak::new_item("P248", &paper_q));
-                                        literature.insert(lit_key);
-                                    }
-                                }
+                                Some(paper_q) => literature_sources.push(Snak::new_item("P248", &paper_q)),
                                 None => println!("Can't find item for PMID '{}'",&v),
                             }
                         }
@@ -1252,25 +1310,27 @@ impl GeneDBot {
 
                     let new_claim_key = json!([aspect_p.clone(), go_q.clone(), qualifiers.clone()]);
                     let new_claim_key = serde_json::to_string(&new_claim_key).unwrap();
-                    if new_go_claims.contains_key(&new_claim_key) {
-                        let ngc = new_go_claims.get_mut(&new_claim_key).unwrap();
-                        for r in references {
-                            ngc.1.push(r);
-                        }
-                    } else {
+
+                    if !new_go_claims.contains_key(&new_claim_key) {
                         new_go_claims.insert(
-                            new_claim_key,
+                            new_claim_key.clone(),
                             (
                                 Snak::new_item(aspect_p.clone(), go_q.clone()),
-                                references,
+                                vec![],
                                 qualifiers,
                             ),
                         );
                     }
 
+                    let ngc = new_go_claims.get_mut(&new_claim_key).unwrap(); // This was just added
+                    for r in references {
+                        ngc.1.push(r);
+                    }
+                    self.deduplicate_references(&mut ngc.1);
+
                     for (k, values) in ga.db_ref().iter_all() {
                         for v in values {
-                            literature.insert(format!("{}|{}", k, v).to_string());
+                            literature.insert(format!("{}:{}", k, v).to_string());
                         }
                     }
 
@@ -1309,6 +1369,19 @@ impl GeneDBot {
                 claim.2.to_owned(),
                 claim.1.to_owned(),
             ));
+        });
+    }
+
+    fn deduplicate_references(&self, references: &mut Vec<Reference>) {
+        let mut ref_keys: HashSet<String> = HashSet::new();
+        references.retain(|r| {
+            let ref_key = serde_json::to_string(&r).unwrap();
+            if ref_keys.contains(&ref_key) {
+                false
+            } else {
+                ref_keys.insert(ref_key);
+                true
+            }
         });
     }
 
