@@ -1201,6 +1201,9 @@ impl GeneDBot {
 
     fn protein_edit_validator(&mut self, diff: &mut EntityDiff) {
         let actions = diff.actions_mut();
+        if actions["claims"].is_null() {
+            return;
+        }
         let claims = match actions["claims"].as_array_mut() {
             Some(c) => c,
             None => return,
