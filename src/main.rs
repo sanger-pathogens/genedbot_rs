@@ -378,7 +378,6 @@ impl GeneDBot {
     }
 
     pub fn load_gaf_file_from_url(&mut self, url: &str) -> Result<(), Box<Error>> {
-        println!("{}", url);
         let mut res = reqwest::get(url)?;
         let decoder = Decoder::new(&mut res)?;
         let mut reader = gaf::Reader::new(decoder, gaf::GafType::GAF2);
@@ -758,6 +757,7 @@ impl GeneDBot {
         ));
 
         let protein_entity_ids = self.process_proteins(&genedb_id);
+        println!("{:?}", &protein_entity_ids);
         if protein_entity_ids.len() > 0 {
             statements_to_create.push(Snak::new_item("P279", "Q20747295")); // Subclass of:protein-coding gene
 
@@ -779,7 +779,7 @@ impl GeneDBot {
                 match ct.get(&genedb_id) {
                     Some(_feature_type) => {
                         subclass_found = true;
-                        let mut fake_literature: Vec<Literature> = vec![];
+                        let mut fake_literature: HashSet<Literature> = HashSet::new();
                         self.process_product(
                             &gff,
                             &mut item,
@@ -800,36 +800,8 @@ impl GeneDBot {
         }
 
         // Orthologs
-        if protein_entity_ids.len() > 0 {
-            self.parent2child
-                .get(&genedb_id)
-                .unwrap_or(&vec![])
-                .iter()
-                .filter(|o| o.1 == "mRNA")
-                .for_each(|o| match self.gff.get(&o.0) {
-                    Some(protein) => {
-                        self.get_orthologs_from_gff_element(&protein)
-                            .iter()
-                            .for_each(|(_species, protein_genedb_id)| {
-                                match self.orth_genedb2q.get(protein_genedb_id) {
-                                    Some(orth_q) => {
-                                        match self.orth_genedb2q_taxon.get(protein_genedb_id) {
-                                            Some(orth_q_taxon) => {
-                                                item.add_claim(Statement::new_normal(
-                                                    Snak::new_item("P684", orth_q),
-                                                    vec![Snak::new_item("P703", orth_q_taxon)],
-                                                    vec![reference.clone()],
-                                                ));
-                                            }
-                                            None => {}
-                                        }
-                                    }
-                                    None => {}
-                                }
-                            });
-                    }
-                    None => {}
-                });
+        if !protein_entity_ids.is_empty() {
+            self.process_orthologs(&mut item, &genedb_id, &reference);
         }
 
         // Create simple (single-reference-only) statements
@@ -879,6 +851,47 @@ impl GeneDBot {
         */
 
         //println!("{}", serde_json::to_string_pretty(&item).unwrap());
+
+        let gene_q = "".to_string(); // TODO
+        for protein_q in protein_entity_ids {
+            self.link_protein_to_gene(&protein_q, &gene_q);
+        }
+    }
+
+    fn process_orthologs(&mut self, item: &mut Entity, genedb_id: &String, reference: &Reference) {
+        self.parent2child
+            .get(genedb_id)
+            .unwrap_or(&vec![])
+            .iter()
+            .filter(|o| o.1 == "mRNA")
+            .for_each(|o| match self.gff.get(&o.0) {
+                Some(protein) => {
+                    self.get_orthologs_from_gff_element(&protein)
+                        .iter()
+                        .for_each(|(_species, protein_genedb_id)| {
+                            match self.orth_genedb2q.get(protein_genedb_id) {
+                                Some(orth_q) => {
+                                    match self.orth_genedb2q_taxon.get(protein_genedb_id) {
+                                        Some(orth_q_taxon) => {
+                                            item.add_claim(Statement::new_normal(
+                                                Snak::new_item("P684", orth_q),
+                                                vec![Snak::new_item("P703", orth_q_taxon)],
+                                                vec![reference.clone()],
+                                            ));
+                                        }
+                                        None => {}
+                                    }
+                                }
+                                None => {}
+                            }
+                        });
+                }
+                None => {}
+            });
+    }
+
+    fn link_protein_to_gene(&mut self, _protein_q: &String, _gene_q: &String) {
+        // TODO
     }
 
     fn log(&self, genedb_id: &String, message: &str) {
@@ -889,7 +902,7 @@ impl GeneDBot {
         &mut self,
         gff: &bio::io::gff::Record,
         item: &mut Entity,
-        literature: &mut Vec<Literature>,
+        literature: &mut HashSet<Literature>,
         genedb_id: &String,
         reference: &Reference,
     ) {
@@ -948,7 +961,7 @@ impl GeneDBot {
         &mut self,
         apk: &HashMap<String, String>,
         item: &mut Entity,
-        literature: &mut Vec<Literature>,
+        literature: &mut HashSet<Literature>,
     ) {
         if !apk.contains_key("evidence") {
             return;
@@ -997,7 +1010,7 @@ impl GeneDBot {
                 RE1.captures_iter(xref).for_each(|m| {
                     let k = m[1].to_string();
                     let v = m[2].to_string();
-                    literature.push(format!("{}|{}", k, v).to_string());
+                    literature.insert(format!("{}|{}", k, v).to_string());
                     lit_q = self.get_or_create_paper_item(&k, &v);
                 });
             }
@@ -1044,7 +1057,7 @@ impl GeneDBot {
             Some(gff) => gff.clone(),
             None => return None,
         };
-
+        println!("{:?}", &gff);
         let mut item = Entity::new_empty_item();
         let item_to_diff = match self.get_entity_for_genedb_id(&protein_genedb_id) {
             Some(i) => i.clone(),
@@ -1056,10 +1069,12 @@ impl GeneDBot {
             self.new_time_today(),
         ]);
 
-        let mut literature: Vec<Literature> = vec![];
+        let mut literature: HashSet<Literature> = HashSet::new();
 
         match gff.attributes().get("literature") {
-            Some(lit) => lit.split(',').for_each(|l| literature.push(l.to_string())),
+            Some(lit) => lit.split(',').for_each(|l| {
+                literature.insert(l.to_string());
+            }),
             None => {}
         }
 
@@ -1111,19 +1126,35 @@ impl GeneDBot {
             EntityDiffParamState::except(&vec!["P813"]),
         ));
 
-        let diff = EntityDiff::new(&item_to_diff, &item, &params);
+        let mut diff = EntityDiff::new(&item_to_diff, &item, &params);
+        self.protein_edit_validator(&mut diff);
         println!("\nPROTEIN:\n{}", diff.actions());
 
         // TODO apply diff/create new (plus, update internal matches and add protein=>gene)
 
-        None
+        self.get_entity_id_for_genedb_id(&protein_genedb_id)
+    }
+
+    fn protein_edit_validator(&mut self, diff: &mut EntityDiff) {
+        let actions = diff.actions_mut();
+        let claims = match actions["claims"].as_array_mut() {
+            Some(c) => c,
+            None => return,
+        };
+        let _props = ["P680", "P681", "P682"];
+        claims
+            .iter()
+            .filter(|c| c["remove"].is_string())
+            .filter(|c| c["id"].is_string())
+            .count();
+        // TODO UNFINISHED
     }
 
     fn add_go_annotation(
         &mut self,
         item: &mut Entity,
         gff: &bio::io::gff::Record,
-        literature: &mut Vec<Literature>,
+        literature: &mut HashSet<Literature>,
     ) {
         let protein_genedb_id = gff.attributes()["ID"].clone();
         let gaf = match self.gaf.get(&protein_genedb_id) {
@@ -1159,99 +1190,116 @@ impl GeneDBot {
                 }
             };
 
+            // Literature
             let mut literature_sources: Vec<Snak> = vec![];
-            for (k, v) in ga.db_ref().iter() {
-                // Literature
-                match k.as_str() {
-                    "GO_REF" => literature_sources.push(Snak::new_string("P854", &format!("https://github.com/geneontology/go-site/blob/master/metadata/gorefs/goref-{}.md",&v))),
-                    "PMID" => match self.get_or_create_paper_item(k, v) {
-                        Some(paper_q) => literature_sources.push(Snak::new_item("P248", &paper_q)),
-                        None => println!("Can't find/create paper for '{}/{}'", &k, &v),
-                    },
-                    other => {
-                        println!("> {}",other);
-                        for w_f in ga.with_from() {
-                            let parts : Vec<&str> = w_f.split(':').collect();
-                            if parts.len() == 2 && parts[0] == "InterPro" {
-                                literature_sources.push(Snak::new_string("P2926", parts[1]));
+            for (k, values) in ga.db_ref().iter_all() {
+                for v in values {
+                    match k.as_str() {
+                        "GO_REF" => {
+                            literature_sources.push(Snak::new_string("P854", &format!("https://github.com/geneontology/go-site/blob/master/metadata/gorefs/goref-{}.md",&v)))
+                        }
+                        "PMID" => {
+                            match self.get_or_create_paper_item(k, v) {
+                                Some(paper_q) => {
+                                    let lit_key = format!("{}|{}", k, v) ;
+                                    if !literature.contains(&lit_key) {
+                                        literature_sources.push(Snak::new_item("P248", &paper_q));
+                                        literature.insert(lit_key);
+                                    }
+                                }
+                                None => println!("Can't find item for PMID '{}'",&v),
+                            }
+                        }
+                        other => {
+                            println!("> {}",other);
+                            for w_f in ga.with_from() {
+                                let parts : Vec<&str> = w_f.split(':').collect();
+                                if parts.len() == 2 && parts[0] == "InterPro" {
+                                    literature_sources.push(Snak::new_string("P2926", parts[1]));
+                                }
                             }
                         }
                     }
-                }
 
-                // Qualifiers
-                let mut qualifiers = vec![Snak::new_item("P459", &evidence_code_q)];
-                for qual in ga.qualifier() {
-                    if qual == "NOT" {
-                        qualifiers.push(Snak::new_item("P6477", "Q186290"));
-                    }
-                }
-
-                // Qualifiers from with_from
-                for w_f in ga.with_from() {
-                    let parts: Vec<&str> = w_f.split(':').collect();
-                    match self.get_with_from_qualifier(&parts) {
-                        Some(snak) => qualifiers.push(snak),
-                        None => {}
-                    }
-                }
-
-                // References for GO terms
-                let references: Vec<Reference> = literature_sources
-                    .iter()
-                    .map(|ls| {
-                        Reference::new(vec![
-                            ls.clone(),
-                            Snak::new_item("P1640", "Q5531047"),
-                            self.new_time_today(),
-                        ])
-                    })
-                    .collect();
-
-                let new_claim_key = json!([aspect_p.clone(), go_q.clone(), qualifiers.clone()]);
-                let new_claim_key = serde_json::to_string(&new_claim_key).unwrap();
-                if new_go_claims.contains_key(&new_claim_key) {
-                    let ngc = new_go_claims.get_mut(&new_claim_key).unwrap();
-                    for r in references {
-                        ngc.1.push(r);
-                    }
-                } else {
-                    new_go_claims.insert(
-                        new_claim_key,
-                        (
-                            Snak::new_item(aspect_p.clone(), go_q.clone()),
-                            references,
-                            qualifiers,
-                        ),
-                    );
-                }
-
-                for (k, v) in ga.db_ref().iter() {
-                    literature.push(format!("{}|{}", k, v).to_string());
-                }
-
-                // Label/aliases
-                if !ga.db_object_name().is_empty() {
-                    match item.label_in_locale("en") {
-                        Some(l) => {
-                            if l == protein_genedb_id {
-                                item.set_label(LocaleString::new(
-                                    "en",
-                                    &ga.db_object_name().to_string(),
-                                ));
-                                item.add_alias(LocaleString::new("en", &protein_genedb_id.clone()));
-                            }
+                    // Qualifiers
+                    let mut qualifiers = vec![Snak::new_item("P459", &evidence_code_q)];
+                    for qual in ga.qualifier() {
+                        if qual == "NOT" {
+                            qualifiers.push(Snak::new_item("P6477", "Q186290"));
                         }
-                        None => {}
                     }
-                }
 
-                // Aliases
-                ga.db_object_synonym().iter().for_each(|syn| {
-                    syn.split(',').for_each(|s| {
-                        item.add_alias(LocaleString::new("en", &self.fix_alias_name(s)));
+                    // Qualifiers from with_from
+                    for w_f in ga.with_from() {
+                        let parts: Vec<&str> = w_f.split(':').collect();
+                        match self.get_with_from_qualifier(&parts) {
+                            Some(snak) => qualifiers.push(snak),
+                            None => {}
+                        }
+                    }
+
+                    // References for GO terms
+                    let references: Vec<Reference> = literature_sources
+                        .iter()
+                        .map(|ls| {
+                            Reference::new(vec![
+                                ls.clone(),
+                                Snak::new_item("P1640", "Q5531047"),
+                                self.new_time_today(),
+                            ])
+                        })
+                        .collect();
+
+                    let new_claim_key = json!([aspect_p.clone(), go_q.clone(), qualifiers.clone()]);
+                    let new_claim_key = serde_json::to_string(&new_claim_key).unwrap();
+                    if new_go_claims.contains_key(&new_claim_key) {
+                        let ngc = new_go_claims.get_mut(&new_claim_key).unwrap();
+                        for r in references {
+                            ngc.1.push(r);
+                        }
+                    } else {
+                        new_go_claims.insert(
+                            new_claim_key,
+                            (
+                                Snak::new_item(aspect_p.clone(), go_q.clone()),
+                                references,
+                                qualifiers,
+                            ),
+                        );
+                    }
+
+                    for (k, values) in ga.db_ref().iter_all() {
+                        for v in values {
+                            literature.insert(format!("{}|{}", k, v).to_string());
+                        }
+                    }
+
+                    // Label/aliases
+                    if !ga.db_object_name().is_empty() {
+                        match item.label_in_locale("en") {
+                            Some(l) => {
+                                if l == protein_genedb_id {
+                                    item.set_label(LocaleString::new(
+                                        "en",
+                                        &ga.db_object_name().to_string(),
+                                    ));
+                                    item.add_alias(LocaleString::new(
+                                        "en",
+                                        &protein_genedb_id.clone(),
+                                    ));
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+
+                    // Aliases
+                    ga.db_object_synonym().iter().for_each(|syn| {
+                        syn.split(',').for_each(|s| {
+                            item.add_alias(LocaleString::new("en", &self.fix_alias_name(s)));
+                        });
                     });
-                });
+                }
             }
         }
 
