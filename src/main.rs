@@ -408,8 +408,10 @@ impl GeneDBot {
     }
 
     fn references(&self) -> Vec<Reference> {
-        // TODO?
-        vec![]
+        vec![Reference::new(vec![
+            Snak::new_item("P248", "Q5531047"),
+            self.new_time_today(),
+        ])]
     }
 
     fn create_genomic_assembly(&mut self) -> Result<String, Box<Error>> {
@@ -443,9 +445,10 @@ impl GeneDBot {
 
         let params = EntityDiffParams::all();
         let diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
-        let res =
-            EntityDiff::apply_diff(&mut self.api, &diff, EditTarget::New("item".to_string()))?;
-        Ok(EntityDiff::get_entity_id(&res).unwrap())
+        match self.ec.apply_diff(&mut self.api, &diff) {
+            Some(q) => Ok(q),
+            None => Err(From::from("Could not create genomic assembly item")),
+        }
     }
 
     fn find_genomic_assembly(&mut self) -> Result<(), Box<Error>> {
@@ -654,13 +657,33 @@ impl GeneDBot {
         }
     }
 
-    fn get_or_create_chromosome_entity(&mut self, id: &str) -> Option<&String> {
+    fn get_or_create_chromosome_entity(&mut self, id: &str) -> Option<String> {
         match self.chr2q.get(id) {
-            Some(q) => Some(q),
-            None => {
-                println!("TODO create new item for chromosome '{}'", id);
-                None
+            Some(q) => return Some(q.clone()),
+            None => {}
+        }
+
+        let mut new_item = Entity::new_empty_item();
+        new_item.set_label(LocaleString::new("en", id));
+        new_item.add_claim(Statement::new_normal(
+            Snak::new_item("P31", "Q37748"),
+            vec![],
+            self.references(),
+        ));
+        new_item.add_claim(Statement::new_normal(
+            Snak::new_item("P703", self.species_q().as_str()),
+            vec![],
+            self.references(),
+        ));
+
+        let params = EntityDiffParams::all();
+        let diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
+        match self.ec.apply_diff(&mut self.api, &diff) {
+            Some(q) => {
+                self.chr2q.insert(id.to_string(), q.clone());
+                Some(q)
             }
+            None => panic!("Could not create chromosome item for '{}'", &id),
         }
     }
 
@@ -757,7 +780,6 @@ impl GeneDBot {
         ));
 
         let protein_entity_ids = self.process_proteins(&genedb_id);
-        println!("{:?}", &protein_entity_ids);
         if protein_entity_ids.len() > 0 {
             statements_to_create.push(Snak::new_item("P279", "Q20747295")); // Subclass of:protein-coding gene
 
@@ -840,21 +862,23 @@ impl GeneDBot {
         ));
 
         let diff = EntityDiff::new(&item_to_diff, &item, &params);
-        println!("\nGENE:\n{}", diff.actions());
+        if !diff.is_empty() {
+            println!("GENE {}: {}", &genedb_id, diff.actions());
+            match self.ec.apply_diff(&mut self.api, &diff) {
+                Some(q) => {
+                    self.genedb2q.insert(genedb_id.to_string(), q);
+                }
+                None => self.log(&genedb_id, "Applying diff returned nothing"),
+            }
+        }
 
-        // TODO apply diff/create new (plus, update internal matches and add protein=>gene)
-        /*
-        let _gene_q = match self.get_entity_id_for_genedb_id(&genedb_id) {
-            Some(q) => q,
-            None => return,
-        };
-        */
-
-        //println!("{}", serde_json::to_string_pretty(&item).unwrap());
-
-        let gene_q = "".to_string(); // TODO
-        for protein_q in protein_entity_ids {
-            self.link_protein_to_gene(&protein_q, &gene_q);
+        match self.get_entity_id_for_genedb_id(&genedb_id) {
+            Some(gene_q) => {
+                for protein_q in protein_entity_ids {
+                    self.link_protein_to_gene(&protein_q, &gene_q);
+                }
+            }
+            None => {}
         }
     }
 
@@ -916,17 +940,30 @@ impl GeneDBot {
             Some(i) => i.clone(),
             None => return,
         };
-        if !gene_i.has_target_entity("P688".to_string(), protein_q.to_string()) {
-            self.link_items("P688", &gene_i, protein_q.to_string());
-        }
-        if !protein_i.has_target_entity("P702".to_string(), gene_q.to_string()) {
-            self.link_items("P702", &protein_i, gene_q.to_string());
-        }
+        self.link_items("P688", &gene_i, protein_q.to_string());
+        self.link_items("P702", &protein_i, gene_q.to_string());
     }
 
     fn link_items(&mut self, property: &str, item: &Entity, target_q: String) {
-        // TODO
-        println!("{} ={}=> {}", item.id(), &property, &target_q);
+        if item.has_target_entity(property, &target_q) {
+            return;
+        }
+        let mut new_item = item.clone();
+        new_item.add_claim(Statement::new_normal(
+            Snak::new_item(property, &target_q),
+            vec![],
+            self.references(),
+        ));
+        let params = EntityDiffParams::all();
+        let diff = EntityDiff::new(&item, &new_item, &params);
+        println!(
+            "{} ={}=> {} : {}",
+            item.id(),
+            &property,
+            &target_q,
+            serde_json::to_string(&diff.actions()).unwrap()
+        );
+        self.ec.apply_diff(&mut self.api, &diff).is_some();
     }
 
     fn log(&self, genedb_id: &String, message: &str) {
@@ -1098,10 +1135,6 @@ impl GeneDBot {
             Some(i) => i.clone(),
             None => Entity::new_empty_item(),
         };
-        let edit_target = match self.get_entity_for_genedb_id(&protein_genedb_id) {
-            Some(i) => EditTarget::Entity(i.id().to_string()),
-            None => EditTarget::New("item".to_string()),
-        };
 
         let reference = Reference::new(vec![
             Snak::new_item("P248", "Q5531047"),
@@ -1175,48 +1208,81 @@ impl GeneDBot {
         ));
 
         let mut diff = EntityDiff::new(&item_to_diff, &item, &params);
-        self.protein_edit_validator(&mut diff);
-        println!("\nPROTEIN:\n{}", diff.actions());
-
-        match EntityDiff::apply_diff(&mut self.api, &diff, edit_target) {
-            Ok(json) => match EntityDiff::get_entity_id(&json) {
-                Some(q) => match self.ec.set_entity_from_json(&json) {
-                    Ok(_) => {
-                        self.genedb2q.insert(protein_genedb_id.to_string(), q);
-                    }
-                    Err(err) => {
-                        self.log(
-                            &protein_genedb_id,
-                            &format!("Could not update entity container from JSON: {:?}", &err),
-                        );
-                    }
-                },
+        self.protein_edit_validator(&mut diff, &item_to_diff);
+        if !diff.is_empty() {
+            println!("PROTEIN {}: {}", &protein_genedb_id, diff.actions());
+            match self.ec.apply_diff(&mut self.api, &diff) {
+                Some(q) => {
+                    self.genedb2q.insert(protein_genedb_id.to_string(), q);
+                }
                 None => self.log(&protein_genedb_id, "Applying diff returned nothing"),
-            },
-            _ => {}
+            }
         }
 
         self.get_entity_id_for_genedb_id(&protein_genedb_id)
     }
 
-    fn protein_edit_validator(&mut self, diff: &mut EntityDiff) {
+    /// Blocks removal of claims [GO terms] that have a reference a non-GeneDB curator
+    fn protein_edit_validator(&mut self, diff: &mut EntityDiff, original_item: &Entity) {
         let actions = diff.actions_mut();
         if actions["claims"].is_null() {
             return;
         }
-        let claims = match actions["claims"].as_array_mut() {
+        let claim_actions = match actions["claims"].as_array_mut() {
             Some(c) => c,
             None => return,
         };
-        let _props = ["P680", "P681", "P682"];
-        claims
-            .iter()
-            .filter(|c| c["remove"].is_string())
-            .filter(|c| c["id"].is_string())
-            .count();
-        // TODO UNFINISHED
+        let props = ["P680", "P681", "P682"];
+
+        // Closure should return false to remove the action
+        claim_actions.retain(|action| {
+            // Removals only
+            if !action["remove"].is_string() {
+                return true;
+            }
+            // Get the ID of the claim to be removed
+            let id = match action["id"].as_str() {
+                Some(id) => id,
+                None => return true,
+            };
+            // Find that claim in the original item
+            let claim = match original_item.claim_with_id(id) {
+                Some(claim) => claim,
+                None => return true,
+            };
+            // Is it a GO term property?
+            if !props.contains(&claim.main_snak().property()) {
+                return true;
+            }
+            let references = claim.references();
+            // No reference? => remove
+            if references.is_empty() {
+                return false;
+            }
+            // More than one reference? => do not remove
+            if references.len() > 1 {
+                return true;
+            }
+            // Any P1640 (=curator) snaks that are NOT Q5531047 (GeneDB)?
+            references
+                .get(0)
+                .unwrap()
+                .snaks()
+                .iter()
+                .filter(|snak| snak.property() == "P1640")
+                .filter(|snak| match snak.data_value() {
+                    Some(dv) => match dv.value() {
+                        Value::Entity(value) => value.id() != "Q5531047",
+                        _ => false,
+                    },
+                    None => false,
+                })
+                .count()
+                > 0
+        });
     }
 
+    /// Adds GO annotation to the protein item
     fn add_go_annotation(
         &mut self,
         item: &mut Entity,
