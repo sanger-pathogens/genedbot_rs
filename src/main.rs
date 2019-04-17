@@ -1557,7 +1557,7 @@ fn main() {
     let species_key = &args[1];
 
     let mut settings = Config::default();
-    settings.merge(File::with_name("test.ini")).unwrap();
+    settings.merge(File::with_name("bot.ini")).unwrap();
     let lgname = settings.get_str("user.user").unwrap();
     let lgpass = settings.get_str("user.pass").unwrap();
 
