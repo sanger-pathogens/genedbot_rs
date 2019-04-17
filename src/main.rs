@@ -99,7 +99,7 @@ pub struct GeneDBot {
 impl GeneDBot {
     pub fn new() -> Self {
         Self {
-            simulate: true,
+            simulate: false,
             product_becomes_label: false,
             gff: HashMap::new(),
             gaf: HashMap::new(),
@@ -731,7 +731,7 @@ impl GeneDBot {
         match gff.attributes().get("Name") {
             Some(name) => {
                 item.set_label(LocaleString::new("en", name));
-                item.add_alias(LocaleString::new("en", &self.fix_alias_name(&genedb_id)));
+                //item.add_alias(LocaleString::new("en", &self.fix_alias_name(&genedb_id)));
             }
             None => item.set_label(LocaleString::new("en", &genedb_id)),
         };
@@ -1030,36 +1030,40 @@ impl GeneDBot {
         }
 
         let mut apk: HashMap<String, String> = HashMap::new();
-        match gff.attributes().get_vec("product") {
-            Some(products) => {
-                products.iter().for_each(|product| {
-                    let product = self.fix_attribute_value(product);
-                    RE1.captures_iter(&product).for_each(|m| {
-                        apk.insert(m[1].to_string(), m[2].to_string());
-                    });
-                    RE2.captures_iter(&product)
-                        .for_each(|m| match item.label_in_locale("en") {
-                            Some(label) => {
-                                if self.product_becomes_label {
-                                    if label == genedb_id {
-                                        item.set_label(LocaleString::new("en", &m[1]));
-                                        item.add_alias(LocaleString::new("en", &genedb_id));
-                                    } else {
-                                        item.add_alias(LocaleString::new("en", &m[1]));
-                                    }
+        let products = match gff.attributes().get_vec("product") {
+            Some(products) => products,
+            None => return,
+        };
+
+        products.iter().for_each(|product| {
+            let product = self.fix_attribute_value(product);
+            let parts: Vec<&str> = product.split(',').collect();
+            for part in parts {
+                RE1.captures_iter(&part).for_each(|m| {
+                    apk.insert(m[1].to_string(), m[2].to_string());
+                });
+                RE2.captures_iter(&part)
+                    .for_each(|m| match item.label_in_locale("en") {
+                        Some(label) => {
+                            if self.product_becomes_label {
+                                if label == genedb_id {
+                                    item.set_label(LocaleString::new("en", &m[1]));
+                                //item.add_alias(LocaleString::new("en", &genedb_id));
                                 } else {
                                     item.add_alias(LocaleString::new("en", &m[1]));
                                 }
+                            } else {
+                                item.add_alias(LocaleString::new("en", &m[1]));
                             }
-                            None => {
-                                item.set_label(LocaleString::new("en", &m[1]));
-                                item.add_alias(LocaleString::new("en", &genedb_id));
-                            }
-                        });
-                });
+                        }
+                        None => {
+                            item.set_label(LocaleString::new("en", &m[1]));
+                            //item.add_alias(LocaleString::new("en", &genedb_id));
+                        }
+                    });
             }
-            None => {}
-        }
+        });
+
         self.set_evidence(&apk, item, literature);
     }
 
