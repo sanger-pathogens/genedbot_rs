@@ -71,6 +71,7 @@ impl GeneDBotConfig {
 #[derive(Debug, Clone)]
 pub struct GeneDBot {
     simulate: bool,
+    product_becomes_label: bool,
     gff: HashMap<String, bio::io::gff::Record>,
     gaf: HashMap<String, Vec<bio::io::gaf::Record>>,
     config: GeneDBotConfig,
@@ -99,6 +100,7 @@ impl GeneDBot {
     pub fn new() -> Self {
         Self {
             simulate: true,
+            product_becomes_label: false,
             gff: HashMap::new(),
             gaf: HashMap::new(),
             config: GeneDBotConfig::new_from_json(&json!({})),
@@ -1038,16 +1040,21 @@ impl GeneDBot {
                     RE2.captures_iter(&product)
                         .for_each(|m| match item.label_in_locale("en") {
                             Some(label) => {
-                                if item.aliases().contains(&LocaleString::new("en", &m[1])) {
-                                    // Ignore
-                                } else if label == genedb_id {
-                                    item.set_label(LocaleString::new("en", &m[1]));
-                                    item.add_alias(LocaleString::new("en", &genedb_id));
+                                if self.product_becomes_label {
+                                    if label == genedb_id {
+                                        item.set_label(LocaleString::new("en", &m[1]));
+                                        item.add_alias(LocaleString::new("en", &genedb_id));
+                                    } else {
+                                        item.add_alias(LocaleString::new("en", &m[1]));
+                                    }
                                 } else {
-                                    item.add_alias(LocaleString::new("en", &genedb_id));
+                                    item.add_alias(LocaleString::new("en", &m[1]));
                                 }
                             }
-                            None => item.add_alias(LocaleString::new("en", &genedb_id)),
+                            None => {
+                                item.set_label(LocaleString::new("en", &m[1]));
+                                item.add_alias(LocaleString::new("en", &genedb_id));
+                            }
                         });
                 });
             }
