@@ -1038,7 +1038,9 @@ impl GeneDBot {
                     RE2.captures_iter(&product)
                         .for_each(|m| match item.label_in_locale("en") {
                             Some(label) => {
-                                if label == genedb_id {
+                                if item.aliases().contains(&LocaleString::new("en", &m[1])) {
+                                    // Ignore
+                                } else if label == genedb_id {
                                     item.set_label(LocaleString::new("en", &m[1]));
                                     item.add_alias(LocaleString::new("en", &genedb_id));
                                 } else {
