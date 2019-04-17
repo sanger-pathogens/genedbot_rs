@@ -70,6 +70,7 @@ impl GeneDBotConfig {
 
 #[derive(Debug, Clone)]
 pub struct GeneDBot {
+    simulate: bool,
     gff: HashMap<String, bio::io::gff::Record>,
     gaf: HashMap<String, Vec<bio::io::gaf::Record>>,
     config: GeneDBotConfig,
@@ -97,6 +98,7 @@ pub struct GeneDBot {
 impl GeneDBot {
     pub fn new() -> Self {
         Self {
+            simulate: true,
             gff: HashMap::new(),
             gaf: HashMap::new(),
             config: GeneDBotConfig::new_from_json(&json!({})),
@@ -374,6 +376,7 @@ impl GeneDBot {
         percent_decode(s.as_bytes())
             .decode_utf8()
             .unwrap()
+            .trim_end_matches(';')
             .to_string()
     }
 
@@ -444,7 +447,8 @@ impl GeneDBot {
         ));
 
         let params = EntityDiffParams::all();
-        let diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
+        let mut diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
+        diff.set_edit_summary(self.get_edit_summary());
         match self.ec.apply_diff(&mut self.api, &diff) {
             Some(q) => Ok(q),
             None => Err(From::from("Could not create genomic assembly item")),
@@ -627,7 +631,7 @@ impl GeneDBot {
             .iter()
             .map(|(_, v)| v.to_owned())
             .for_each(|s| items_to_load.push(s));
-        //println!("Loading {} items", items_to_load.len());
+        println!("Loading {} items", items_to_load.len()); // DEBUG OUTPUT
         self.ec.load_entities(&self.api, &items_to_load)?;
         Ok(())
     }
@@ -677,7 +681,8 @@ impl GeneDBot {
         ));
 
         let params = EntityDiffParams::all();
-        let diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
+        let mut diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
+        diff.set_edit_summary(self.get_edit_summary());
         match self.ec.apply_diff(&mut self.api, &diff) {
             Some(q) => {
                 self.chr2q.insert(id.to_string(), q.clone());
@@ -793,23 +798,27 @@ impl GeneDBot {
             let mut subclass_found: bool = false;
             for subclass in self.alternate_gene_subclasses.clone() {
                 let class_name = subclass.0;
-                let _class_q = subclass.1;
+                let class_q = subclass.1;
                 let ct = match self.other_types.get(&class_name.to_owned()) {
                     Some(ct) => ct,
                     None => continue,
                 };
                 match ct.get(&genedb_id) {
-                    Some(_feature_type) => {
-                        subclass_found = true;
-                        let mut fake_literature: HashSet<Literature> = HashSet::new();
-                        self.process_product(
-                            &gff,
-                            &mut item,
-                            &mut fake_literature,
-                            &genedb_id,
-                            &reference,
-                        );
-                    }
+                    Some(gff_tmp_opt) => match gff_tmp_opt.clone() {
+                        Some(gff_tmp) => {
+                            statements_to_create.push(Snak::new_item("P279", &class_q));
+                            subclass_found = true;
+                            let mut fake_literature: HashSet<Literature> = HashSet::new();
+                            self.process_product(
+                                &gff_tmp,
+                                &mut item,
+                                &mut fake_literature,
+                                &genedb_id,
+                                &reference,
+                            );
+                        }
+                        None => {}
+                    },
                     None => {}
                 };
             }
@@ -861,14 +870,22 @@ impl GeneDBot {
             EntityDiffParamState::except(&vec!["P813"]),
         ));
 
-        let diff = EntityDiff::new(&item_to_diff, &item, &params);
+        let mut diff = EntityDiff::new(&item_to_diff, &item, &params);
+        diff.set_edit_summary(self.get_edit_summary());
         if !diff.is_empty() {
-            println!("GENE {}: {}", &genedb_id, diff.actions());
-            match self.ec.apply_diff(&mut self.api, &diff) {
-                Some(q) => {
-                    self.genedb2q.insert(genedb_id.to_string(), q);
+            println!(
+                "\nGENE {}/{:?}:\n{}",
+                &genedb_id,
+                diff.edit_target(),
+                serde_json::to_string(&diff.actions()).unwrap()
+            );
+            if !self.simulate {
+                match self.ec.apply_diff(&mut self.api, &diff) {
+                    Some(q) => {
+                        self.genedb2q.insert(genedb_id.to_string(), q);
+                    }
+                    None => self.log(&genedb_id, "Applying diff returned nothing"),
                 }
-                None => self.log(&genedb_id, "Applying diff returned nothing"),
             }
         }
 
@@ -880,6 +897,10 @@ impl GeneDBot {
             }
             None => {}
         }
+    }
+
+    fn get_edit_summary(&self) -> Option<String> {
+        Some("Syncing to GeneDB (V3)".to_string())
     }
 
     fn process_orthologs(&mut self, item: &mut Entity, genedb_id: &String, reference: &Reference) {
@@ -955,7 +976,8 @@ impl GeneDBot {
             self.references(),
         ));
         let params = EntityDiffParams::all();
-        let diff = EntityDiff::new(&item, &new_item, &params);
+        let mut diff = EntityDiff::new(&item, &new_item, &params);
+        diff.set_edit_summary(self.get_edit_summary());
         println!(
             "{} ={}=> {} : {}",
             item.id(),
@@ -963,7 +985,9 @@ impl GeneDBot {
             &target_q,
             serde_json::to_string(&diff.actions()).unwrap()
         );
-        self.ec.apply_diff(&mut self.api, &diff).is_some();
+        if !self.simulate {
+            self.ec.apply_diff(&mut self.api, &diff).is_some();
+        }
     }
 
     fn log(&self, genedb_id: &String, message: &str) {
@@ -1007,10 +1031,11 @@ impl GeneDBot {
         match gff.attributes().get_vec("product") {
             Some(products) => {
                 products.iter().for_each(|product| {
-                    RE1.captures_iter(product).for_each(|m| {
+                    let product = self.fix_attribute_value(product);
+                    RE1.captures_iter(&product).for_each(|m| {
                         apk.insert(m[1].to_string(), m[2].to_string());
                     });
-                    RE2.captures_iter(product)
+                    RE2.captures_iter(&product)
                         .for_each(|m| match item.label_in_locale("en") {
                             Some(label) => {
                                 if label == genedb_id {
@@ -1208,14 +1233,22 @@ impl GeneDBot {
         ));
 
         let mut diff = EntityDiff::new(&item_to_diff, &item, &params);
+        diff.set_edit_summary(self.get_edit_summary());
         self.protein_edit_validator(&mut diff, &item_to_diff);
         if !diff.is_empty() {
-            println!("PROTEIN {}: {}", &protein_genedb_id, diff.actions());
-            match self.ec.apply_diff(&mut self.api, &diff) {
-                Some(q) => {
-                    self.genedb2q.insert(protein_genedb_id.to_string(), q);
+            println!(
+                "\nPROTEIN {}/{:?}:\n{}",
+                &protein_genedb_id,
+                diff.edit_target(),
+                serde_json::to_string(&diff.actions()).unwrap()
+            );
+            if !self.simulate {
+                match self.ec.apply_diff(&mut self.api, &diff) {
+                    Some(q) => {
+                        self.genedb2q.insert(protein_genedb_id.to_string(), q);
+                    }
+                    None => self.log(&protein_genedb_id, "Applying diff returned nothing"),
                 }
-                None => self.log(&protein_genedb_id, "Applying diff returned nothing"),
             }
         }
 
