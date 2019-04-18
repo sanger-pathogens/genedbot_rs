@@ -7,7 +7,8 @@ edition = "2018"
 [dependencies]
 mediawiki = "0.1.9"
 #mediawiki = { path = "../mediawiki" }
-wikibase = { path = "../wikibase_rs" }
+#wikibase = { path = "../wikibase_rs" }
+wikibase = { git="https://gitlab.com/tobias47n9e/wikibase_rs"}
 #bio = "0.25.0"
 #bio = { path = "../rust-bio" }
 bio = { git="https://github.com/magnusmanske/rust-bio.git" , branch="gaf_file_support" }
