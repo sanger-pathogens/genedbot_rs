@@ -717,7 +717,7 @@ impl GeneDBot {
             "gene" => ("gene", "Q7187"),
             "pseudogene" => ("pseudogene", "Q277338"),
             other => {
-                println!("Gene {} has unknown type {}", &genedb_id, other);
+                self.log(&genedb_id, &format!("Gene has unknown type {}", other));
                 return;
             }
         };
@@ -1001,7 +1001,7 @@ impl GeneDBot {
     }
 
     fn log(&self, genedb_id: &String, message: &str) {
-        println!("!! {}: {}", genedb_id, message);
+        println!("{}: {}", genedb_id, message);
     }
 
     fn process_product(
@@ -1359,7 +1359,10 @@ impl GeneDBot {
             let go_q = match self.get_item_for_go_term(&go_term) {
                 Some(q) => q,
                 None => {
-                    println!("No Wikidata item for GO term: '{}'", &go_term);
+                    self.log(
+                        &protein_genedb_id,
+                        &format!("No Wikidata item for GO term '{}'", &go_term),
+                    );
                     continue;
                 }
             };
@@ -1368,7 +1371,10 @@ impl GeneDBot {
             let aspect_p = match self.aspects.get(&aspect) {
                 Some(p) => p.clone(),
                 None => {
-                    println!("Unknown aspect: '{}'", &aspect);
+                    self.log(
+                        &protein_genedb_id,
+                        &format!("Unknown aspect '{}' for GO term '{}'", &aspect, &go_term),
+                    );
                     continue;
                 }
             };
@@ -1377,7 +1383,13 @@ impl GeneDBot {
             let evidence_code_q = match self.evidence_codes.get(&evidence_code) {
                 Some(q) => q.clone(),
                 None => {
-                    println!("Unknown evidence code: '{}'", &evidence_code);
+                    self.log(
+                        &protein_genedb_id,
+                        &format!(
+                            "Unknown evidence code '{}' for GO term '{}'",
+                            &evidence_code, &go_term
+                        ),
+                    );
                     continue;
                 }
             };
@@ -1393,11 +1405,11 @@ impl GeneDBot {
                         "PMID" => {
                             match self.get_or_create_paper_item(k, v) {
                                 Some(paper_q) => literature_sources.push(Snak::new_item("P248", &paper_q)),
-                                None => println!("Can't find item for PMID '{}'",&v),
+                                None => self.log(&protein_genedb_id,&format!("Can't find item for PMID '{}'",&v)),
                             }
                         }
                         other => {
-                            println!("> {}",other);
+                            self.log(&protein_genedb_id,&format!("Unknown db_ref literature key '{}'",other));
                             for w_f in ga.with_from() {
                                 let parts : Vec<&str> = w_f.split(':').collect();
                                 if parts.len() == 2 && parts[0] == "InterPro" {
@@ -1621,6 +1633,7 @@ fn main() {
     let lgpass = settings.get_str("user.pass").unwrap();
 
     let mut bot = GeneDBot::new();
+    bot.api.set_user_agent("GeneDBot/3.0");
     if args.len() == 3 {
         bot.specific_genes_only = Some(vec![args[2].to_string()]);
     }
