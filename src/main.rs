@@ -1634,6 +1634,7 @@ fn main() {
 
     let mut bot = GeneDBot::new();
     bot.api.set_user_agent("GeneDBot/3.0");
+    bot.api.set_edit_delay(Some(500)); // Half a second between edits
     if args.len() == 3 {
         bot.specific_genes_only = Some(vec![args[2].to_string()]);
     }
