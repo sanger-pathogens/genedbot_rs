@@ -1632,8 +1632,10 @@ impl GeneDBot {
     }
 
     pub fn init(&mut self) -> Result<(), Box<Error>> {
-        self.load_gff_file().expect("Can't load GFF file");
-        self.load_gaf_file().expect("Can't load GAF file");
+        self.load_gff_file()
+            .expect(&format!("Can't load GFF file '{}'", self.gff_url()));
+        self.load_gaf_file()
+            .expect(&format!("Can't load GAF file '{}'", self.gaf_url()));
         //let species_q = self.species_q();
         //let _species_i = self.ec.load_entity(&self.api, species_q)?;
         self.find_genomic_assembly()?;
