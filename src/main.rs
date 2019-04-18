@@ -380,21 +380,28 @@ impl GeneDBot {
         lazy_static! {
             static ref RE_ORTH: Regex = Regex::new(r"^\s*(\S*):(\S+)").unwrap();
         }
-        match gff.attributes().get("orthologous_to") {
-            Some(orth) => {
-                let orth = self.fix_attribute_value(orth);
-                let v: Vec<&str> = orth.split(',').collect();
-                v.iter()
-                    .filter(|o| RE_ORTH.is_match(o))
-                    .map(|o| {
-                        RE_ORTH
-                            .captures_iter(o)
-                            .map(|m| return (m[1].to_string(), m[2].to_string()))
-                            .next()
-                    })
-                    .filter(|o| o.is_some())
-                    .map(|o| o.unwrap())
-                    .collect()
+
+        match gff.attributes().get_vec("orthologous_to") {
+            Some(orths) => {
+                let mut ret: Vec<(String, String)> = vec![];
+                for orth in orths {
+                    let orth = self.fix_attribute_value(orth);
+                    let v: Vec<&str> = orth.split(',').collect();
+                    let mut result: Vec<(String, String)> = v
+                        .iter()
+                        .filter(|o| RE_ORTH.is_match(o))
+                        .map(|o| {
+                            RE_ORTH
+                                .captures_iter(o)
+                                .map(|m| return (m[1].to_string(), m[2].to_string()))
+                                .next()
+                        })
+                        .filter(|o| o.is_some())
+                        .map(|o| o.unwrap())
+                        .collect();
+                    ret.append(&mut result);
+                }
+                ret
             }
             None => vec![],
         }
