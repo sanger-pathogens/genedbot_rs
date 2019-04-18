@@ -18,6 +18,7 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::{error::Error, fmt};
+use std::{thread, time};
 use wikibase::entity_container::*;
 use wikibase::entity_diff::*;
 use wikibase::*;
@@ -71,6 +72,7 @@ impl GeneDBotConfig {
 #[derive(Debug, Clone)]
 pub struct GeneDBot {
     simulate: bool,
+    verbose: bool,
     product_becomes_label: bool,
     gff: HashMap<String, bio::io::gff::Record>,
     gaf: HashMap<String, Vec<bio::io::gaf::Record>>,
@@ -100,6 +102,7 @@ impl GeneDBot {
     pub fn new() -> Self {
         Self {
             simulate: false,
+            verbose: false,
             product_becomes_label: false,
             gff: HashMap::new(),
             gaf: HashMap::new(),
@@ -633,7 +636,9 @@ impl GeneDBot {
             .iter()
             .map(|(_, v)| v.to_owned())
             .for_each(|s| items_to_load.push(s));
-        println!("Loading {} items", items_to_load.len()); // DEBUG OUTPUT
+        if self.verbose {
+            println!("Loading {} items", items_to_load.len());
+        }
         self.ec.load_entities(&self.api, &items_to_load)?;
         Ok(())
     }
@@ -875,15 +880,18 @@ impl GeneDBot {
         let mut diff = EntityDiff::new(&item_to_diff, &item, &params);
         diff.set_edit_summary(self.get_edit_summary());
         if !diff.is_empty() {
-            println!(
-                "\nGENE {}/{:?}:\n{}",
-                &genedb_id,
-                diff.edit_target(),
-                serde_json::to_string(&diff.actions()).unwrap()
-            );
+            if self.verbose {
+                println!(
+                    "\nGENE {}/{:?}:\n{}",
+                    &genedb_id,
+                    diff.edit_target(),
+                    serde_json::to_string(&diff.actions()).unwrap()
+                );
+            }
             if !self.simulate {
                 match self.ec.apply_diff(&mut self.api, &diff) {
                     Some(q) => {
+                        thread::sleep(time::Duration::from_millis(500));
                         self.genedb2q.insert(genedb_id.to_string(), q);
                     }
                     None => self.log(&genedb_id, "Applying diff returned nothing"),
@@ -1042,25 +1050,25 @@ impl GeneDBot {
                 RE1.captures_iter(&part).for_each(|m| {
                     apk.insert(m[1].to_string(), m[2].to_string());
                 });
-                RE2.captures_iter(&part)
-                    .for_each(|m| match item.label_in_locale("en") {
+                RE2.captures_iter(&part).for_each(|m| {
+                    let m_fixed = self.fix_alias_name(&m[1]);
+                    match item.label_in_locale("en") {
                         Some(label) => {
                             if self.product_becomes_label {
                                 if label == genedb_id {
-                                    item.set_label(LocaleString::new("en", &m[1]));
-                                //item.add_alias(LocaleString::new("en", &genedb_id));
+                                    item.set_label(LocaleString::new("en", &m_fixed));
                                 } else {
-                                    item.add_alias(LocaleString::new("en", &m[1]));
+                                    item.add_alias(LocaleString::new("en", &m_fixed));
                                 }
                             } else {
-                                item.add_alias(LocaleString::new("en", &m[1]));
+                                item.add_alias(LocaleString::new("en", &m_fixed));
                             }
                         }
                         None => {
-                            item.set_label(LocaleString::new("en", &m[1]));
-                            //item.add_alias(LocaleString::new("en", &genedb_id));
+                            item.set_label(LocaleString::new("en", &m_fixed));
                         }
-                    });
+                    }
+                });
             }
         });
 
@@ -1249,21 +1257,26 @@ impl GeneDBot {
         diff.set_edit_summary(self.get_edit_summary());
         self.protein_edit_validator(&mut diff, &item_to_diff);
         if !diff.is_empty() {
-            println!(
-                "\nPROTEIN {}/{:?}:\n{}",
-                &protein_genedb_id,
-                diff.edit_target(),
-                serde_json::to_string(&diff.actions()).unwrap()
-            );
+            if self.verbose {
+                println!(
+                    "\nPROTEIN {}/{:?}:\n{}",
+                    &protein_genedb_id,
+                    diff.edit_target(),
+                    serde_json::to_string(&diff.actions()).unwrap()
+                );
+            }
             if !self.simulate {
                 match self.ec.apply_diff(&mut self.api, &diff) {
                     Some(q) => {
+                        thread::sleep(time::Duration::from_millis(500));
                         self.genedb2q.insert(protein_genedb_id.to_string(), q);
                     }
                     None => self.log(&protein_genedb_id, "Applying diff returned nothing"),
                 }
             }
         }
+
+        // TODO add main subject to literature
 
         self.get_entity_id_for_genedb_id(&protein_genedb_id)
     }
@@ -1612,10 +1625,8 @@ fn main() {
         bot.specific_genes_only = Some(vec![args[2].to_string()]);
     }
     bot.api.login(lgname, lgpass).unwrap();
-    //println!("is bot: {}", bot.api.user().is_bot());
     bot.load_config_file(species_key)
         .expect("Can't load config file");
-    //println!("{:?}", &bot.config);
     bot.init().unwrap();
     bot.run().unwrap();
 }
