@@ -104,7 +104,7 @@ impl GeneDBot {
         match std::env::var("http_proxy") {
             Ok(proxy_url) => {
                 if !proxy_url.is_empty() {
-                    println!("Setting http proxy to {}", &proxy_url);
+                    //println!("Setting http proxy to {}", &proxy_url);
                     builder = builder.proxy(reqwest::Proxy::http(proxy_url.as_str()).unwrap());
                 }
             }
@@ -113,7 +113,7 @@ impl GeneDBot {
         match std::env::var("https_proxy") {
             Ok(proxy_url) => {
                 if !proxy_url.is_empty() {
-                    println!("Setting https proxy to {}", &proxy_url);
+                    //println!("Setting https proxy to {}", &proxy_url);
                     builder = builder.proxy(reqwest::Proxy::https(proxy_url.as_str()).unwrap());
                 }
             }
