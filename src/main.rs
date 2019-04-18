@@ -100,6 +100,25 @@ pub struct GeneDBot {
 
 impl GeneDBot {
     pub fn new() -> Self {
+        let mut builder = reqwest::ClientBuilder::new();
+        match std::env::var("http_proxy") {
+            Ok(proxy_url) => {
+                if !proxy_url.is_empty() {
+                    println!("Setting http proxy to {}", &proxy_url);
+                    builder = builder.proxy(reqwest::Proxy::http(proxy_url.as_str()).unwrap());
+                }
+            }
+            _ => {}
+        }
+        match std::env::var("https_proxy") {
+            Ok(proxy_url) => {
+                if !proxy_url.is_empty() {
+                    println!("Setting https proxy to {}", &proxy_url);
+                    builder = builder.proxy(reqwest::Proxy::https(proxy_url.as_str()).unwrap());
+                }
+            }
+            _ => {}
+        }
         Self {
             simulate: false,
             verbose: false,
@@ -110,7 +129,11 @@ impl GeneDBot {
             species_key: "".to_string(),
             genomic_assembly_q: "".to_string(),
             ec: EntityContainer::new(),
-            api: mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap(),
+            api: mediawiki::api::Api::new_from_builder(
+                "https://www.wikidata.org/w/api.php",
+                builder,
+            )
+            .unwrap(),
             chr2q: HashMap::new(),
             genedb2q: HashMap::new(),
             protein_genedb2q: HashMap::new(),
