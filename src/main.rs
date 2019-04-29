@@ -842,7 +842,7 @@ impl GeneDBot {
                 statements_to_create.push(Snak::new_item("P688", &protein_q));
             }
         } else if gene_type.0 != "gene" {
-            statements_to_create.push(Snak::new_item("P688", gene_type.1));
+            statements_to_create.push(Snak::new_item("P279", gene_type.1));
         } else {
             let mut subclass_found: bool = false;
             for subclass in self.alternate_gene_subclasses.clone() {
@@ -905,6 +905,7 @@ impl GeneDBot {
             "P2548", // Strand orientation
             "P644",  // Genomic start
             "P645",  // Genomic end
+            "P688",  // Encodes
         ];
 
         let mut params = EntityDiffParams::none();
