@@ -104,7 +104,6 @@ impl GeneDBot {
         match std::env::var("http_proxy") {
             Ok(proxy_url) => {
                 if !proxy_url.is_empty() {
-                    //println!("Setting http proxy to {}", &proxy_url);
                     builder = builder.proxy(reqwest::Proxy::http(proxy_url.as_str()).unwrap());
                 }
             }
@@ -113,7 +112,6 @@ impl GeneDBot {
         match std::env::var("https_proxy") {
             Ok(proxy_url) => {
                 if !proxy_url.is_empty() {
-                    //println!("Setting https proxy to {}", &proxy_url);
                     builder = builder.proxy(reqwest::Proxy::https(proxy_url.as_str()).unwrap());
                 }
             }
@@ -356,11 +354,24 @@ impl GeneDBot {
         match &self.specific_genes_only {
             Some(genes) => match element.attributes().get("ID") {
                 Some(id) => {
-                    // TODO HACKISH
-                    let mut id = id.clone();
-                    id.pop();
-                    id.pop();
-                    if !genes.contains(&id) {
+                    let mut ok = false;
+
+                    // TODO HACKISH but only relevant for testing, so...
+                    let mut id2 = id.clone();
+                    id2.pop();
+                    id2.pop();
+                    if genes.contains(&id2) {
+                        ok = true;
+                    }
+
+                    if id.ends_with(":mRNA") {
+                        let id2 = &id[..(id.len() - 5)];
+                        if genes.contains(&id2.to_string()) {
+                            ok = true;
+                        }
+                    }
+
+                    if !ok {
                         return;
                     }
                 }
@@ -368,6 +379,7 @@ impl GeneDBot {
             },
             None => {}
         }
+
         self.get_orthologs_from_gff_element(&element)
             .iter()
             .for_each(|x| {
@@ -386,7 +398,7 @@ impl GeneDBot {
                 let mut ret: Vec<(String, String)> = vec![];
                 for orth in orths {
                     let orth = self.fix_attribute_value(orth);
-                    let v: Vec<&str> = orth.split(',').collect();
+                    let v: Vec<&str> = orth.split("type=orthologous_to,").collect();
                     let mut result: Vec<(String, String)> = v
                         .iter()
                         .filter(|o| RE_ORTH.is_match(o))
@@ -944,6 +956,7 @@ impl GeneDBot {
     }
 
     fn process_orthologs(&mut self, item: &mut Entity, genedb_id: &String, reference: &Reference) {
+        let mut had_that: HashSet<String> = HashSet::new();
         self.parent2child
             .get(genedb_id)
             .unwrap_or(&vec![])
@@ -956,6 +969,10 @@ impl GeneDBot {
                         .for_each(|(_species, protein_genedb_id)| {
                             match self.orth_genedb2q.get(protein_genedb_id) {
                                 Some(orth_q) => {
+                                    if had_that.contains(orth_q) {
+                                        return;
+                                    }
+                                    had_that.insert(orth_q.to_string());
                                     match self.orth_genedb2q_taxon.get(protein_genedb_id) {
                                         Some(orth_q_taxon) => {
                                             item.add_claim(Statement::new_normal(
@@ -1643,8 +1660,6 @@ impl GeneDBot {
             .expect(&format!("Can't load GFF file '{}'", self.gff_url()));
         self.load_gaf_file()
             .expect(&format!("Can't load GAF file '{}'", self.gaf_url()));
-        //let species_q = self.species_q();
-        //let _species_i = self.ec.load_entity(&self.api, species_q)?;
         self.find_genomic_assembly()?;
         self.load_basic_items()?;
         Ok(())
