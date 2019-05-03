@@ -1052,6 +1052,130 @@ impl GeneDBot {
         println!("{}: {}", genedb_id, message);
     }
 
+    fn process_product_controlled_curation(
+        &mut self,
+        gff: &bio::io::gff::Record,
+        _item: &mut Entity,
+        _literature: &mut HashSet<Literature>,
+        genedb_id: &String,
+        reference: &Reference,
+    ) {
+        lazy_static! {
+            static ref RE1: Regex = Regex::new(r"^(.+?)=(.+)$").unwrap();
+        }
+
+        match gff.attributes().get_vec("controlled_curation") {
+            Some(parts) => {
+                for part in parts {
+                    let mut kv: HashMap<String, String> = HashMap::new();
+                    let part = self.fix_attribute_value(part);
+                    let subparts: Vec<&str> = part.split(';').collect();
+                    for subpart in subparts {
+                        RE1.captures_iter(&subpart).for_each(|m| {
+                            kv.insert(m[1].to_string(), m[2].to_string());
+                        });
+                    }
+                    println!("controlled_curation: {:?}", &kv);
+
+                    let mut statement;
+
+                    // Is there a recognizable term?
+                    match kv.get("term") {
+                        Some(s) => match s.as_str() {
+                            "gene deletion phenotype: essential" => {
+                                statement = Statement::new_normal(
+                                    Snak::new_item("P31", "Q17119234"), // Instance of: Essential gene
+                                    vec![],
+                                    vec![],
+                                );
+                            }
+                            "dispensable" => {
+                                statement = Statement::new_normal(
+                                    Snak::new_item("P31", "Q63092631"), // Instance of: Dispensable gene
+                                    vec![],
+                                    vec![],
+                                );
+                            }
+                            other => {
+                                self.log(
+                                    &genedb_id,
+                                    &format!("unknown controlled curation term '{}'", &other),
+                                );
+                                continue;
+                            }
+                        },
+                        _ => {
+                            // No term
+                            continue;
+                        }
+                    }
+
+                    // Valid term confirmed, new statement primed
+                    let mut reference = reference.clone();
+
+                    // Add evidence code
+                    match kv.get("evidence") {
+                        Some(evidence_text) => {
+                            match self
+                                .evidence_codes_labels
+                                .get(&self.normalize_evidence_label(evidence_text))
+                            {
+                                Some(ecq) => {
+                                    statement.add_qualifier_snak(Snak::new_item("P459", ecq));
+                                }
+                                None => {
+                                    self.log(
+                                        &genedb_id,
+                                        &format!("Unrecognized evidence: '{}'", &evidence_text),
+                                    );
+                                }
+                            }
+                        }
+                        None => {}
+                    }
+
+                    // Literature
+                    match kv.get("db_xref") {
+                        Some(xref) => {
+                            let parts: Vec<&str> = xref.split(':').collect();
+                            if parts.len() == 2 {
+                                let paper_item = self.get_or_create_paper_item(
+                                    &parts[0].to_string(),
+                                    &parts[1].to_string(),
+                                );
+                                match paper_item {
+                                    Some(q) => {
+                                        let mut snaks = reference.snaks().clone();
+                                        snaks.push(Snak::new_item("P248", &q));
+                                        reference.set_snaks(snaks);
+                                    }
+                                    None => {
+                                        self.log(
+                                            &genedb_id,
+                                            &format!(
+                                                "Unrecognized literature: '{}:{}'",
+                                                &parts[0], &parts[1]
+                                            ),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        None => {}
+                    }
+
+                    // Add the reference to the statement
+                    statement.set_references(vec![reference]);
+
+                    // Add statement to item
+                    //println!("{:?}", &statement);
+                    //item.add_claim(statement); // Works, but turned off until definitions are clear
+                }
+            }
+            None => {}
+        }
+    }
+
     fn process_product(
         &mut self,
         gff: &bio::io::gff::Record,
@@ -1060,6 +1184,13 @@ impl GeneDBot {
         genedb_id: &String,
         reference: &Reference,
     ) {
+        lazy_static! {
+            static ref RE1: Regex = Regex::new(r"^(.+?)=(.+)$").unwrap();
+            static ref RE2: Regex = Regex::new(r"^term=(.+)$").unwrap();
+        }
+
+        self.process_product_controlled_curation(gff, item, literature, genedb_id, reference);
+
         match gff.attributes().get_vec("Dbxref") {
             Some(xrefs) => {
                 xrefs.iter().for_each(|xref| {
@@ -1077,12 +1208,6 @@ impl GeneDBot {
                 });
             }
             None => {}
-        }
-
-        lazy_static! {
-            static ref RE1: Regex = Regex::new(r"^(.+?)=(.+)$").unwrap();
-            static ref RE2: Regex = Regex::new(r"^term=(.+)$").unwrap();
-            //static ref RE3: Regex = Regex::new(r"^with=InterPro:(.+)$").unwrap(); // Deactivated; applies to family?
         }
 
         let mut apk: HashMap<String, String> = HashMap::new();
