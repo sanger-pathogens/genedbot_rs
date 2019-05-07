@@ -1055,10 +1055,10 @@ impl GeneDBot {
     fn process_product_controlled_curation(
         &mut self,
         gff: &bio::io::gff::Record,
-        _item: &mut Entity,
-        _literature: &mut HashSet<Literature>,
+        item: &mut Entity,
+        literature: &mut HashSet<Literature>,
         genedb_id: &String,
-        reference: &Reference,
+        _reference: &Reference,
     ) {
         lazy_static! {
             static ref RE1: Regex = Regex::new(r"^(.+?)=(.+)$").unwrap();
@@ -1075,7 +1075,6 @@ impl GeneDBot {
                             kv.insert(m[1].to_string(), m[2].to_string());
                         });
                     }
-                    println!("controlled_curation: {:?}", &kv);
 
                     let mut statement;
 
@@ -1084,14 +1083,14 @@ impl GeneDBot {
                         Some(s) => match s.as_str() {
                             "gene deletion phenotype: essential" => {
                                 statement = Statement::new_normal(
-                                    Snak::new_item("P31", "Q17119234"), // Instance of: Essential gene
+                                    Snak::new_item("P279", "Q17119234"), // Subclass of: Essential gene
                                     vec![],
                                     vec![],
                                 );
                             }
                             "dispensable" => {
                                 statement = Statement::new_normal(
-                                    Snak::new_item("P31", "Q63092631"), // Instance of: Dispensable gene
+                                    Snak::new_item("P279", "Q63092631"), // Subclass of: Dispensable gene
                                     vec![],
                                     vec![],
                                 );
@@ -1111,7 +1110,10 @@ impl GeneDBot {
                     }
 
                     // Valid term confirmed, new statement primed
-                    let mut reference = reference.clone();
+                    let mut reference = Reference::new(vec![
+                        Snak::new_item("P1640", "Q5531047"),
+                        self.new_time_today(),
+                    ]);
 
                     // Add evidence code
                     match kv.get("evidence") {
@@ -1148,6 +1150,9 @@ impl GeneDBot {
                                         let mut snaks = reference.snaks().clone();
                                         snaks.push(Snak::new_item("P248", &q));
                                         reference.set_snaks(snaks);
+                                        literature.insert(
+                                            format!("{}:{}", &parts[0], &parts[1]).to_string(),
+                                        );
                                     }
                                     None => {
                                         self.log(
@@ -1168,8 +1173,7 @@ impl GeneDBot {
                     statement.set_references(vec![reference]);
 
                     // Add statement to item
-                    //println!("{:?}", &statement);
-                    //item.add_claim(statement); // Works, but turned off until definitions are clear
+                    item.add_claim(statement);
                 }
             }
             None => {}
