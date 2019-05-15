@@ -6,13 +6,21 @@ extern crate chrono;
 extern crate config;
 extern crate libflate;
 extern crate mediawiki;
+extern crate papers;
 extern crate regex;
 extern crate reqwest;
 
+use papers::*;
+//use multimap::MultiMap;
 use bio::io::{gaf, gff};
 use chrono::Local;
 use config::{Config, File};
 use libflate::gzip::Decoder;
+use papers::crossref2wikidata::Crossref2Wikidata;
+use papers::orcid2wikidata::Orcid2Wikidata;
+use papers::pubmed2wikidata::Pubmed2Wikidata;
+use papers::semanticscholar2wikidata::Semanticscholar2Wikidata;
+use papers::wikidata_papers::WikidataPapers;
 use percent_encoding::percent_decode;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -1727,7 +1735,21 @@ impl GeneDBot {
         }
     }
 
+    fn create_paper_item(&mut self, ids: &mut Vec<GenericWorkIdentifier>) -> Option<String> {
+        println!("Creating paper item for {:?}", &ids);
+        let mut wdp = WikidataPapers::new();
+        wdp.add_adapter(Box::new(Pubmed2Wikidata::new()));
+        wdp.add_adapter(Box::new(Crossref2Wikidata::new()));
+        wdp.add_adapter(Box::new(Semanticscholar2Wikidata::new()));
+        wdp.add_adapter(Box::new(Orcid2Wikidata::new()));
+        let ids = wdp.update_from_paper_ids(&ids);
+        wdp.create_or_update_item_from_ids(&mut self.api, &ids)
+    }
+
     fn get_or_create_paper_item(&mut self, k: &String, v: &String) -> Option<String> {
+        if v == "PMID" {
+            return None;
+        }
         if self.paper2q.contains_key(&(k.to_string(), v.to_string())) {
             return Some(
                 self.paper2q
@@ -1742,12 +1764,35 @@ impl GeneDBot {
                 let sparql_result = self.api.sparql_query(&sparql).ok()?;
                 let items = self.api.entities_from_sparql_result(&sparql_result, "q");
                 match items.len() {
+                    0 => {
+                        let mut ids = vec![GenericWorkIdentifier::new_prop(PROP_PMID, v)];
+                        match self.create_paper_item(&mut ids) {
+                            Some(q) => {
+                                println!(
+                                    "CREATED NEW PAPER ITEM https://www.wikidata.org/wiki/{}",
+                                    &q
+                                );
+                                self.paper2q
+                                    .insert((k.to_string(), v.to_string()), q.clone());
+                                Some(q.clone())
+                            }
+                            None => {
+                                println!("FAILED TO CREATE WIKIDATA ITEM FOR PMID:{}", &v);
+                                None
+                            }
+                        }
+                    }
                     1 => {
                         self.paper2q
                             .insert((k.to_string(), v.to_string()), items[0].clone());
                         Some(items[0].clone())
                     }
-                    _ => None,
+                    _ => {
+                        // Multiple, use first one
+                        self.paper2q
+                            .insert((k.to_string(), v.to_string()), items[0].clone());
+                        Some(items[0].clone())
+                    }
                 }
             }
             other => {
