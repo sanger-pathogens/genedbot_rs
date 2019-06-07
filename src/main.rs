@@ -103,6 +103,7 @@ pub struct GeneDBot {
     xref2prop: HashMap<String, String>,
     aspects: HashMap<String, String>,
     go_term2q: HashMap<String, String>,
+    genes2load: Vec<String>,
     pub specific_genes_only: Option<Vec<String>>,
 }
 
@@ -152,6 +153,7 @@ impl GeneDBot {
             paper2q: HashMap::new(),
             go_term2q: HashMap::new(),
             specific_genes_only: None,
+            genes2load: vec![],
             aspects: vec![("P", "P682"), ("F", "P680"), ("C", "P681")]
                 .iter()
                 .map(|x| (x.0.to_string(), x.1.to_string()))
@@ -341,7 +343,11 @@ impl GeneDBot {
                     .entry(parent_id.to_string())
                     .or_insert(vec![])
                     .push((id.clone(), element.feature_type().to_string())),
-                None => {}
+                None => match element.feature_type().to_string().as_str() {
+                    "gene" => self.genes2load.push(id.clone()),
+                    "pseudogene" => self.genes2load.push(id.clone()),
+                    _ => {}
+                },
             }
         }
 
@@ -676,7 +682,14 @@ impl GeneDBot {
     fn get_gene_ids_to_process(&self) -> Vec<String> {
         match &self.specific_genes_only {
             Some(genes) => genes.clone(),
-            None => self.genedb2q.iter().map(|(q, _)| q.to_owned()).collect(),
+            None => {
+                let mut ret: Vec<String> =
+                    self.genedb2q.iter().map(|(id, _)| id.to_owned()).collect();
+                ret.extend(self.genes2load.iter().cloned());
+                ret.sort();
+                ret.dedup();
+                ret
+            }
         }
     }
 
@@ -1044,6 +1057,7 @@ impl GeneDBot {
         let params = EntityDiffParams::all();
         let mut diff = EntityDiff::new(&item, &new_item, &params);
         diff.set_edit_summary(self.get_edit_summary());
+        /*
         println!(
             "{} ={}=> {} : {}",
             item.id(),
@@ -1051,6 +1065,7 @@ impl GeneDBot {
             &target_q,
             serde_json::to_string(&diff.actions()).unwrap()
         );
+        */
         if !self.simulate {
             self.ec.apply_diff(&mut self.api, &diff).is_some();
         }
@@ -1735,6 +1750,26 @@ impl GeneDBot {
         }
     }
 
+    pub fn search_wikibase(&self, query: &String) -> Vec<String> {
+        let params: HashMap<_, _> = vec![
+            ("action", "query"),
+            ("list", "search"),
+            ("srnamespace", "0"),
+            ("srsearch", &query.as_str()),
+        ]
+        .into_iter()
+        .map(|(x, y)| (x.to_string(), y.to_string()))
+        .collect();
+        let res = self.api.get_query_api_json(&params).unwrap();
+        match res["query"]["search"].as_array() {
+            Some(items) => items
+                .iter()
+                .map(|item| item["title"].as_str().unwrap().to_string())
+                .collect(),
+            None => vec![],
+        }
+    }
+
     fn create_paper_item(&mut self, ids: &mut Vec<GenericWorkIdentifier>) -> Option<String> {
         println!("Creating paper item for {:?}", &ids);
         let mut wdp = WikidataPapers::new();
@@ -1760,9 +1795,12 @@ impl GeneDBot {
         }
         match k.as_str() {
             "PMID" => {
+                /*
                 let sparql = format!("SELECT ?q {{ ?q wdt:P698 '{}' }}", &v);
                 let sparql_result = self.api.sparql_query(&sparql).ok()?;
                 let items = self.api.entities_from_sparql_result(&sparql_result, "q");
+                */
+                let items = self.search_wikibase(&format!("haswbstatement:P698={}", &v));
                 match items.len() {
                     0 => {
                         let mut ids = vec![GenericWorkIdentifier::new_prop(PROP_PMID, v)];
