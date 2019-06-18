@@ -38,8 +38,7 @@ pub fn process(
     item.set_label(LocaleString::new("en", &protein_genedb_id.clone()));
 
     let mut statements_to_create = vec![
-        Snak::new_item("P31", "Q8054"), // Instance of:Protein
-        //Snak::new_item("P279", "Q8054"),          // Subclass of:Protein
+        Snak::new_item("P31", "Q8054"),           // Instance of:Protein
         Snak::new_item("P703", &bot.species_q()), // Found in:Species
         Snak::new_string("P3382", &protein_genedb_id),
     ];

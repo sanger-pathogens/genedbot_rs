@@ -90,7 +90,10 @@ pub fn process(bot: &mut GeneDBot, genedb_id: String) {
 
     let protein_entity_ids = bot.process_proteins(&genedb_id);
     if protein_entity_ids.len() > 0 {
-        statements_to_create.push(Snak::new_item("P279", "Q20747295")); // Subclass of:protein-coding gene
+        if gene_type.0 == "gene" {
+            // Genes only, no pseudogene
+            statements_to_create.push(Snak::new_item("P279", "Q20747295")); // Subclass of:protein-coding gene
+        }
 
         // Encodes: protein
         for protein_q in &protein_entity_ids {

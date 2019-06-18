@@ -326,13 +326,17 @@ impl GeneDBot {
             .to_string()
     }
 
+    fn is_product_type(&self, s: &str) -> bool {
+        s == "mRNA" || s == "pseudogenic_transcript"
+    }
+
     fn process_orthologs(&mut self, item: &mut Entity, genedb_id: &String, reference: &Reference) {
         let mut had_that: HashSet<String> = HashSet::new();
         self.parent2child
             .get(genedb_id)
             .unwrap_or(&vec![])
             .iter()
-            .filter(|o| o.1 == "mRNA")
+            .filter(|o| self.is_product_type(&o.1))
             .for_each(|o| match self.gff.get(&o.0) {
                 Some(protein) => {
                     self.get_orthologs_from_gff_element(&protein)
@@ -650,7 +654,7 @@ impl GeneDBot {
             .get(&genedb_id.clone())
             .unwrap_or(&vec![])
             .iter()
-            .filter(|child| child.1 == "mRNA" || child.1 == "pseudogenic_transcript")
+            .filter(|child| self.is_product_type(&child.1))
             .map(|child| child.0.to_owned())
             .collect();
         protein_genedb_ids
