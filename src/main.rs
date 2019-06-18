@@ -78,7 +78,7 @@ impl GeneDBotConfig {
 pub struct GeneDBot {
     simulate: bool,
     verbose: bool,
-    product_becomes_label: bool,
+    product_term_becomes_label: bool,
     gff: HashMap<String, bio::io::gff::Record>,
     gaf: HashMap<String, Vec<bio::io::gaf::Record>>,
     config: GeneDBotConfig,
@@ -129,7 +129,7 @@ impl GeneDBot {
         Self {
             simulate: false,
             verbose: false,
-            product_becomes_label: false,
+            product_term_becomes_label: true,
             gff: HashMap::new(),
             gaf: HashMap::new(),
             config: GeneDBotConfig::new_from_json(&json!({})),
@@ -549,7 +549,7 @@ impl GeneDBot {
                     let m_fixed = self.fix_alias_name(&m[1]);
                     match item.label_in_locale("en") {
                         Some(label) => {
-                            if self.product_becomes_label {
+                            if self.product_term_becomes_label {
                                 if label == genedb_id {
                                     item.set_label(LocaleString::new("en", &m_fixed));
                                 } else {
