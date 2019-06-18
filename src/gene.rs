@@ -194,7 +194,7 @@ pub fn process(bot: &mut GeneDBot, genedb_id: String) {
         if !bot.simulate {
             match bot.ec.apply_diff(&mut bot.api, &diff) {
                 Some(q) => {
-                    thread::sleep(time::Duration::from_millis(500));
+                    //thread::sleep(time::Duration::from_millis(500));
                     bot.genedb2q.insert(genedb_id.to_string(), q);
                 }
                 None => bot.log(&genedb_id, "Applying diff returned nothing"),
