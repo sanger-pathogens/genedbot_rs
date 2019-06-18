@@ -650,7 +650,7 @@ impl GeneDBot {
             .get(&genedb_id.clone())
             .unwrap_or(&vec![])
             .iter()
-            .filter(|child| child.1 == "mRNA")
+            .filter(|child| child.1 == "mRNA" || child.1 == "pseudogenic_transcript")
             .map(|child| child.0.to_owned())
             .collect();
         protein_genedb_ids
@@ -665,7 +665,7 @@ impl GeneDBot {
     }
 
     fn get_with_from_qualifier(&self, parts: &Vec<&str>) -> Option<Snak> {
-        if parts.len() != 1 {
+        if parts.len() != 2 {
             return None;
         }
         match parts[0] {
