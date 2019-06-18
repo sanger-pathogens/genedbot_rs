@@ -1,6 +1,5 @@
 use crate::{GeneDBot, Literature};
 use std::collections::HashSet;
-use std::{thread, time};
 
 use wikibase::entity_diff::*;
 use wikibase::*;

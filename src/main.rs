@@ -740,28 +740,61 @@ impl GeneDBot {
     }
 }
 
+fn run_bot_for_species_and_gene(
+    species_key: &String,
+    genes: &Option<Vec<String>>,
+    lgname: &str,
+    lgpass: &str,
+) {
+    let mut bot = GeneDBot::new();
+    bot.api.set_user_agent("GeneDBot/3.0");
+    bot.api.set_edit_delay(Some(500)); // Half a second between edits
+    bot.specific_genes_only = genes.to_owned();
+    bot.api.login(lgname, lgpass).unwrap();
+    bot.load_config_file(species_key)
+        .expect("Can't load config file");
+    bot.init().unwrap();
+    bot.run().unwrap();
+}
+
 fn main() {
     let args: Vec<_> = env::args().collect();
     if args.len() < 2 {
         println!("Argument (species key) required\n");
         return;
     }
-    let species_key = &args[1];
 
     let mut settings = Config::default();
     settings.merge(File::with_name("bot.ini")).unwrap();
     let lgname = settings.get_str("user.user").unwrap();
     let lgpass = settings.get_str("user.pass").unwrap();
 
-    let mut bot = GeneDBot::new();
-    bot.api.set_user_agent("GeneDBot/3.0");
-    bot.api.set_edit_delay(Some(500)); // Half a second between edits
-    if args.len() == 3 {
-        bot.specific_genes_only = Some(vec![args[2].to_string()]);
+    let species_key = &args[1];
+    if species_key == "all" {
+        let config: serde_json::Value = reqwest::get(SPECIES_CONFIG_FILE)
+            .expect(format!("Config file '{}' can not be loaded", &SPECIES_CONFIG_FILE).as_str())
+            .json()
+            .expect(
+                format!(
+                    "Failed to parse config file '{}' into JSON",
+                    &SPECIES_CONFIG_FILE,
+                )
+                .as_str(),
+            );
+        for (group, species_list) in config.as_object().unwrap() {
+            println!("{}", &group);
+            for species in species_list.as_array().unwrap() {
+                let species_key = species["abbreviation"].as_str().unwrap().to_string();
+                println!("> {}", &species_key);
+                run_bot_for_species_and_gene(&species_key, &None, &lgname, &lgpass);
+            }
+        }
+    } else {
+        let gene = if args.len() == 3 {
+            Some(vec![args[2].to_string()])
+        } else {
+            None
+        };
+        run_bot_for_species_and_gene(&species_key, &gene, &lgname, &lgpass);
     }
-    bot.api.login(lgname, lgpass).unwrap();
-    bot.load_config_file(species_key)
-        .expect("Can't load config file");
-    bot.init().unwrap();
-    bot.run().unwrap();
 }
