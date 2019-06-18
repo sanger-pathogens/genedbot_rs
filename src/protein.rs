@@ -1,7 +1,7 @@
 use crate::{GeneDBot, Literature};
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::{thread, time};
-
 use wikibase::entity_diff::*;
 use wikibase::*;
 
@@ -202,6 +202,10 @@ fn add_go_annotation(
     gff: &bio::io::gff::Record,
     literature: &mut HashSet<Literature>,
 ) {
+    lazy_static! {
+        static ref RE_DATE: Regex = Regex::new(r"^(\d{4})(\d{2})(\d{2})$").unwrap();
+    }
+
     let protein_genedb_id = gff.attributes()["ID"].clone();
     let gaf = match bot.gaf.get(&protein_genedb_id) {
         Some(gaf) => gaf.clone(),
@@ -279,6 +283,21 @@ fn add_go_annotation(
                     if qual == "NOT" {
                         qualifiers.push(Snak::new_item("P6477", "Q186290"));
                     }
+                }
+
+                // Date
+                match RE_DATE.captures(ga.date()) {
+                    Some(caps) => {
+                        let time = "+".to_string()
+                            + caps.get(1).unwrap().as_str()
+                            + "-"
+                            + caps.get(2).unwrap().as_str()
+                            + "-"
+                            + caps.get(3).unwrap().as_str()
+                            + "T00:00:00Z";
+                        qualifiers.push(Snak::new_time("P585", &time, 11));
+                    }
+                    None => {}
                 }
 
                 // Qualifiers from with_from
