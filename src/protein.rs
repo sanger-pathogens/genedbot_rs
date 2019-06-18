@@ -101,6 +101,7 @@ pub fn process(
     params.claims.add = EntityDiffParamState::All;
     params.claims.alter = EntityDiffParamState::All;
     params.claims.remove = EntityDiffParamState::some(&my_props);
+    params.qualifiers = EntityDiffParamSub::all();
     params.references.list.push((
         EntityDiffParamState::some(&my_props),
         EntityDiffParamState::except(&vec!["P813"]),
