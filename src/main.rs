@@ -539,9 +539,9 @@ impl GeneDBot {
         };
 
         products.iter().for_each(|product| {
-            let product = self.fix_attribute_value(product);
             let parts: Vec<&str> = product.split(',').collect();
             for part in parts {
+                let part = self.fix_attribute_value(part);
                 RE1.captures_iter(&part).for_each(|m| {
                     apk.insert(m[1].to_string(), m[2].to_string());
                 });
@@ -725,10 +725,9 @@ impl GeneDBot {
     }
 
     pub fn run(&mut self) -> Result<(), Box<Error>> {
-        self.get_gene_ids_to_process().iter().for_each(|genedb_id| {
-            gene::process(self, genedb_id.to_string())
-            //self.process_gene(genedb_id.to_string())
-        });
+        self.get_gene_ids_to_process()
+            .iter()
+            .for_each(|genedb_id| gene::process(self, genedb_id.to_string()));
         Ok(())
     }
 
