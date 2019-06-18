@@ -93,6 +93,8 @@ pub fn process(bot: &mut GeneDBot, genedb_id: String) {
         if gene_type.0 == "gene" {
             // Genes only, no pseudogene
             statements_to_create.push(Snak::new_item("P279", "Q20747295")); // Subclass of:protein-coding gene
+        } else if gene_type.0 == "pseudogene" {
+            statements_to_create.push(Snak::new_item("P279", "Q277338")); // Subclass of:pseudogene
         }
 
         // Encodes: protein
