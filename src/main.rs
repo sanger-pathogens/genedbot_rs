@@ -231,10 +231,6 @@ impl GeneDBot {
         }
     }
 
-    fn normalize_evidence_label(&self, s: &String) -> String {
-        s.trim().to_lowercase()
-    }
-
     fn get_entity_id_for_genedb_id(&self, id: &String) -> Option<String> {
         match self.genedb2q.get(id) {
             Some(q) => Some(q.to_string()),
@@ -455,7 +451,7 @@ impl GeneDBot {
                             match self
                                 .evidence
                                 .label2q
-                                .get(&self.normalize_evidence_label(evidence_text))
+                                .get(&self.evidence.normalize_label(evidence_text))
                             {
                                 Some(ecq) => {
                                     statement.add_qualifier_snak(Snak::new_item("P459", ecq));
@@ -606,16 +602,14 @@ impl GeneDBot {
         let mut qualifiers = vec![];
 
         match apk.get("evidence") {
-            Some(evidence) => {
-                match self
-                    .evidence
-                    .label2q
-                    .get(&self.normalize_evidence_label(evidence))
-                {
-                    Some(ecq) => qualifiers.push(Snak::new_item("P459", ecq)),
-                    None => {}
-                }
-            }
+            Some(evidence) => match self
+                .evidence
+                .label2q
+                .get(&self.evidence.normalize_label(evidence))
+            {
+                Some(ecq) => qualifiers.push(Snak::new_item("P459", ecq)),
+                None => {}
+            },
             None => {}
         }
         match apk.get("term") {
