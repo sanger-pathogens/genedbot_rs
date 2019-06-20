@@ -127,11 +127,6 @@ impl Papers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /*
-    TODO:
-    get_or_create_item
-    create_paper_item
-    */
 
     #[test]
     fn test_new() {
@@ -161,5 +156,26 @@ mod tests {
             papers.search_wikibase(&"\"Charles Darwin\" haswbstatement:P31=Q5".to_string());
         assert!(result.iter().any(|s| s == "Q1035"));
         assert!(!result.iter().any(|s| s == "Q1064071"));
+    }
+
+    #[test]
+    fn test_get_or_create_item() {
+        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let mut papers = Papers::new(&api);
+        assert_eq!(
+            papers.get_or_create_item(&"PMID".to_string(), &"27998271".to_string()),
+            Some("Q28030910".to_string())
+        );
+        assert_eq!(
+            papers.get_or_create_item(&"PMID".to_string(), &"0".to_string()),
+            None
+        );
+    }
+
+    // Wrappers, not tested:
+
+    #[test]
+    fn test_create_paper_item() {
+        // Just a wrapper around WikidataPapers functions
     }
 }
