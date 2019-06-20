@@ -456,7 +456,6 @@ mod tests {
     fn load_orthologs
     fn set_other_types(bot: &mut GeneDBot, element: &bio::io::gff::Record, id: &str)
     fn process_gff_element(
-    fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>>
     fn load_gff_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
@@ -584,7 +583,17 @@ mod tests {
     #[test]
     fn test_load_gaf_file_from_url() {
         let mut bot = GeneDBot::new();
-        load_gaf_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf").unwrap();
-        println!("{:?}", bot.gaf);
+        load_gaf_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf.gz").unwrap();
+        assert!(bot.gaf.contains_key("PF3D7_0100100.1"));
+        assert_eq!(
+            bot.gaf
+                .get("PF3D7_0100100.1")
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .go_id(),
+            "GO:0009405"
+        );
+        // Just testing correct loading, not testing GAF parsing any further here
     }
 }
