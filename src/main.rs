@@ -27,6 +27,7 @@ pub mod evidence;
 pub mod gene;
 pub mod literature;
 pub mod loader;
+pub mod orthologs;
 pub mod protein;
 
 const SPECIES_CONFIG_FILE: &str = "https://www.genedb.org/data/datasets.json";
@@ -75,6 +76,16 @@ impl GeneDBotConfig {
     }
 }
 
+pub trait Toolbox {
+    fn fix_attribute_value(&self, s: &str) -> String {
+        percent_decode(s.as_bytes())
+            .decode_utf8()
+            .expect(format!("fix_attribute_value: '{}' is not utf8", s).as_str())
+            .trim_end_matches(';')
+            .to_string()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GeneDBot {
     simulate: bool,
@@ -93,8 +104,7 @@ pub struct GeneDBot {
     evidence: evidence::Evidence,
     alternate_gene_subclasses: HashMap<String, String>,
     other_types: HashMap<String, HashMap<String, Option<bio::io::gff::Record>>>,
-    orth_genedb2q: HashMap<String, String>,
-    orth_genedb2q_taxon: HashMap<String, String>,
+    orthologs: orthologs::Orthologs,
     parent2child: HashMap<String, Vec<(String, String)>>,
     xref2prop: HashMap<String, String>,
     aspects: HashMap<String, String>,
@@ -103,6 +113,8 @@ pub struct GeneDBot {
     pub specific_genes_only: Option<Vec<String>>,
     papers: literature::Papers,
 }
+
+impl Toolbox for GeneDBot {}
 
 impl GeneDBot {
     pub fn new() -> Self {
@@ -148,8 +160,7 @@ impl GeneDBot {
             protein_genedb2q: HashMap::new(),
             evidence: evidence::Evidence::new(),
             other_types: HashMap::new(),
-            orth_genedb2q: HashMap::new(),
-            orth_genedb2q_taxon: HashMap::new(),
+            orthologs: orthologs::Orthologs::new(),
             parent2child: HashMap::new(),
             go_term2q: HashMap::new(),
             specific_genes_only: None,
@@ -325,14 +336,6 @@ impl GeneDBot {
         }
     }
 
-    fn fix_attribute_value(&self, s: &str) -> String {
-        percent_decode(s.as_bytes())
-            .decode_utf8()
-            .expect(format!("fix_attribute_value: '{}' is not utf8", s).as_str())
-            .trim_end_matches(';')
-            .to_string()
-    }
-
     fn is_product_type(&self, s: &str) -> bool {
         s == "mRNA" || s == "pseudogenic_transcript"
     }
@@ -349,13 +352,13 @@ impl GeneDBot {
                     self.get_orthologs_from_gff_element(&protein)
                         .iter()
                         .for_each(|(_species, protein_genedb_id)| {
-                            match self.orth_genedb2q.get(protein_genedb_id) {
+                            match self.orthologs.genedb2q.get(protein_genedb_id) {
                                 Some(orth_q) => {
                                     if had_that.contains(orth_q) {
                                         return;
                                     }
                                     had_that.insert(orth_q.to_string());
-                                    match self.orth_genedb2q_taxon.get(protein_genedb_id) {
+                                    match self.orthologs.genedb2taxon_q.get(protein_genedb_id) {
                                         Some(orth_q_taxon) => {
                                             item.add_claim(Statement::new_normal(
                                                 Snak::new_item("P684", orth_q),

@@ -44,82 +44,24 @@ pub fn gaf_url(bot: &GeneDBot) -> String {
 
 pub fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>> {
     let mut orth_ids: HashSet<String> = HashSet::new();
-    let mut res = reqwest::get(url)?;
-    let decoder = Decoder::new(&mut res)?;
-    let mut reader = gff::Reader::new(decoder, gff::GffType::GFF3);
-    for element in reader.records() {
-        match element {
-            Ok(e) => {
-                process_gff_element(bot, &e, &mut orth_ids);
-            }
-            _ => continue,
-        }
-    }
-
-    if bot.gff.is_empty() {
-        panic!("Can't get GFF data from {}", url);
-    }
-
-    load_orthologs(bot, orth_ids)?;
-    Ok(())
-}
-
-fn load_orthologs(
-    bot: &mut GeneDBot,
-    mut orth_ids: HashSet<String>,
-) -> Result<(), Box<::std::error::Error>> {
-    if orth_ids.is_empty() {
-        return Ok(());
-    }
-
-    if orth_ids.len() < 1000 {
-        // Usually for testing
-        let orth_ids: Vec<String> = orth_ids.drain().collect();
-        for chunk in orth_ids.chunks(100) {
-            let sparql = format!("SELECT ?q ?genedb ?taxon {{ VALUES ?genedb {{'{}'}} . ?q wdt:P3382 ?genedb ; wdt:P703 ?taxon }}",chunk.join("' '"));
-            let sparql_result = bot.api.sparql_query(&sparql)?;
-            for b in sparql_result["results"]["bindings"].as_array().unwrap() {
-                let q = match b["q"]["value"].as_str() {
-                    Some(s) => bot.api.extract_entity_from_uri(s).unwrap(),
-                    None => continue,
-                };
-                let taxon_q = match b["taxon"]["value"].as_str() {
-                    Some(s) => bot.api.extract_entity_from_uri(s).unwrap(),
-                    None => continue,
-                };
-                let genedb = match b["genedb"]["value"].as_str() {
-                    Some(s) => s.to_string(),
-                    None => continue,
-                };
-                bot.orth_genedb2q.insert(genedb.to_string(), q);
-                bot.orth_genedb2q_taxon.insert(genedb.to_string(), taxon_q);
+    if true {
+        let mut res = reqwest::get(url)?;
+        let decoder = Decoder::new(&mut res)?;
+        let mut reader = gff::Reader::new(decoder, gff::GffType::GFF3);
+        for element in reader.records() {
+            match element {
+                Ok(e) => {
+                    process_gff_element(bot, &e, &mut orth_ids);
+                }
+                _ => continue,
             }
         }
-    } else {
-        // Retrieven 'em all and let HashSet sort 'em out...
-        let sparql = "SELECT ?q ?genedb ?taxon { ?q wdt:P3382 ?genedb ; wdt:P703 ?taxon }";
-        let sparql_result = bot.api.sparql_query(&sparql)?;
-        for b in sparql_result["results"]["bindings"].as_array().unwrap() {
-            let genedb = match b["genedb"]["value"].as_str() {
-                Some(s) => s.to_string(),
-                None => continue,
-            };
-            if !orth_ids.contains(&genedb) {
-                continue;
-            }
-            let q = match b["q"]["value"].as_str() {
-                Some(s) => bot.api.extract_entity_from_uri(s).unwrap(),
-                None => continue,
-            };
-            let taxon_q = match b["taxon"]["value"].as_str() {
-                Some(s) => bot.api.extract_entity_from_uri(s).unwrap(),
-                None => continue,
-            };
-            bot.orth_genedb2q.insert(genedb.to_string(), q);
-            bot.orth_genedb2q_taxon.insert(genedb.to_string(), taxon_q);
+
+        if bot.gff.is_empty() {
+            panic!("Can't get GFF data from {}", url);
         }
     }
-    Ok(())
+    bot.orthologs.load(&bot.api, orth_ids)
 }
 
 fn fix_id(id: &str) -> String {
@@ -599,6 +541,16 @@ mod tests {
         assert_eq!(*bot.gff.get("Pfalciparum_REP_25").unwrap().start(), 9313);
         // Just testing correct loading, not testing GFF parsing any further here
     }
+
+    /*
+    #[test]
+    fn test_load_orthologs() {
+        let mut bot = GeneDBot::new();
+        let mut orth_ids: HashSet<String> = HashSet::new();
+        orth_ids.insert("dummy".to_string());
+        load_orthologs(&mut bot, orth_ids).unwrap();
+    }
+    */
 
     // Wrappers, untested:
 
