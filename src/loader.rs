@@ -337,7 +337,7 @@ fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
 }
 
 fn sparql_result_to_pairs(
-    bot: &mut GeneDBot,
+    api: &mut mediawiki::api::Api,
     j: &serde_json::Value,
     k1: &str,
     k2: &str,
@@ -349,14 +349,12 @@ fn sparql_result_to_pairs(
         .filter(|b| b[k2]["value"].as_str().is_some())
         .map(|b| {
             let v1 = b[k1]["value"].as_str().unwrap();
-            let v1 = bot
-                .api
+            let v1 = api
                 .extract_entity_from_uri(v1)
                 .unwrap_or(v1.to_string())
                 .to_string();
             let v2 = b[k2]["value"].as_str().unwrap();
-            let v2 = bot
-                .api
+            let v2 = api
                 .extract_entity_from_uri(v2)
                 .unwrap_or(v2.to_string())
                 .to_string();
@@ -386,16 +384,17 @@ pub fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     // Genes
     let sparql = format!("SELECT DISTINCT ?q ?genedb {{ {} . {} . ?q wdt:P31 ?gene_types ; wdt:P703 ?species ; wdt:P3382 ?genedb }}",&species_list,&gene_p31) ;
     let res = bot.api.sparql_query(&sparql)?;
-    bot.genedb2q = sparql_result_to_pairs(bot, &res["results"]["bindings"], "genedb", "q")
+    bot.genedb2q = sparql_result_to_pairs(&mut bot.api, &res["results"]["bindings"], "genedb", "q")
         .into_iter()
         .collect();
 
     // Proteins
     let sparql = format!("SELECT DISTINCT ?q ?genedb {{ {} . ?q wdt:P31 wd:Q8054 ; wdt:P703 ?species ; wdt:P3382 ?genedb }}",&species_list) ;
     let res = bot.api.sparql_query(&sparql)?;
-    bot.protein_genedb2q = sparql_result_to_pairs(bot, &res["results"]["bindings"], "genedb", "q")
-        .into_iter()
-        .collect();
+    bot.protein_genedb2q =
+        sparql_result_to_pairs(&mut bot.api, &res["results"]["bindings"], "genedb", "q")
+            .into_iter()
+            .collect();
     Ok(())
 }
 
@@ -457,9 +456,71 @@ pub fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test1() {
-        let bot = GeneDBot::new();
-        println!("{:?}", &bot.genes2load);
+    /*
+    TODO:
+    fn init(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>>
+    fn load_orthologs
+    fn fix_id(id: &str) -> String
+    fn set_other_types(bot: &mut GeneDBot, element: &bio::io::gff::Record, id: &str)
+    fn process_gff_element(
+    fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>>
+    fn load_gff_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<Error>>
+    fn find_genomic_assembly(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    fn load_evidence_codes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    fn get_gene_entities_to_process(bot: &GeneDBot) -> Vec<String>
+    fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+    */
+
+    fn json_url() -> &'static str {
+        "https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/dummy.json"
     }
+
+    #[test]
+    fn test_get_text_from_url() {
+        assert_eq!(
+            get_text_from_url(json_url()).unwrap(),
+            "{\"test\":1234}".to_string()
+        );
+    }
+
+    #[test]
+    fn test_get_json_from_url() {
+        assert_eq!(get_json_from_url(json_url()).unwrap(), json!({"test":1234}));
+    }
+
+    #[test]
+    fn test_gff_url() {
+        let mut bot = GeneDBot::new();
+        bot.species_key = "test1234".to_string();
+        assert_eq!(
+            gff_url(&bot),
+            "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/test1234/test1234.gff.gz",
+        );
+    }
+
+    #[test]
+    fn test_gaf_url() {
+        let mut bot = GeneDBot::new();
+        bot.species_key = "test1234".to_string();
+        assert_eq!(
+            gaf_url(&bot),
+            "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/test1234/test1234.gaf.gz",
+        );
+    }
+
+    #[test]
+    fn test_sparql_result_to_pairs() {
+        let mut api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let j = json!({"head":{"vars":["q","genedb"]},"results":{"bindings":[{"q":{"type":"uri","value":"http://www.wikidata.org/entity/Q18968266"},"genedb":{"datatype":"http://www.w3.org/2001/XMLSchema#string","type":"literal","value":"PF3D7_0220200"}}]}});
+        let expected = vec![("PF3D7_0220200".to_string(), "Q18968266".to_string())];
+        let result = sparql_result_to_pairs(&mut api, &j["results"]["bindings"], "genedb", "q");
+        assert_eq!(result, expected,)
+    }
+
 }
