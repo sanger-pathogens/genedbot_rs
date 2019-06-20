@@ -459,7 +459,6 @@ mod tests {
     fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>>
     fn load_gff_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
-    fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>>
 
@@ -580,5 +579,12 @@ mod tests {
         assert!(bot.ec.has_entity(TMHMM_Q)); // Force-loaded
         assert!(bot.ec.has_entity("Q61866468")); // Pf3D7_03_v3
         assert!(!bot.ec.has_entity("Q12345")); // Count Count
+    }
+
+    #[test]
+    fn test_load_gaf_file_from_url() {
+        let mut bot = GeneDBot::new();
+        load_gaf_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf").unwrap();
+        println!("{:?}", bot.gaf);
     }
 }
