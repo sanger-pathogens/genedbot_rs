@@ -123,3 +123,43 @@ impl Papers {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    /*
+    TODO:
+    get_or_create_item
+    create_paper_item
+    */
+
+    #[test]
+    fn test_new() {
+        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let papers = Papers::new(&api);
+        assert!(papers.paper2q.is_empty());
+    }
+
+    #[test]
+    fn test_api() {
+        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let mut papers = Papers::new(&api);
+        assert_eq!(
+            papers
+                .api()
+                .get_site_info_string("general", "sitename")
+                .unwrap(),
+            "Wikidata"
+        );
+    }
+
+    #[test]
+    fn test_search_wikibase() {
+        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let mut papers = Papers::new(&api);
+        let result =
+            papers.search_wikibase(&"\"Charles Darwin\" haswbstatement:P31=Q5".to_string());
+        assert!(result.iter().any(|s| s == "Q1035"));
+        assert!(!result.iter().any(|s| s == "Q1064071"));
+    }
+}
