@@ -13,7 +13,7 @@ pub fn init(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     println!("2");
     load_gaf_file(bot)?; //.expect(&format!("Can't load GAF file '{}'", gaf_url(bot)));
     println!("3");
-    find_genomic_assembly(bot)?;
+    find_genomic_assembly(bot, true)?;
     println!("4");
     load_basic_items(bot)?;
     println!("5");
@@ -249,7 +249,7 @@ pub fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     load_gaf_file_from_url(bot, gaf_url(bot).as_str())
 }
 
-fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<Error>> {
+fn create_genomic_assembly_item(bot: &mut GeneDBot) -> Result<Entity, Box<Error>> {
     let species_q = bot.species_q();
     let species_i = bot.ec.load_entity(&bot.api, species_q.clone())?;
     let err1 = Err(From::from(format!(
@@ -277,7 +277,11 @@ fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<Error>> {
         qualifiers.clone(),
         bot.references(),
     ));
+    Ok(new_item)
+}
 
+fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<Error>> {
+    let new_item = create_genomic_assembly_item(bot)?;
     let params = EntityDiffParams::all();
     let mut diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
     diff.set_edit_summary(bot.get_edit_summary());
@@ -287,7 +291,7 @@ fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<Error>> {
     }
 }
 
-fn find_genomic_assembly(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
+fn find_genomic_assembly(bot: &mut GeneDBot, do_create_if_missing: bool) -> Result<(), Box<Error>> {
     let sparql = format!(
         "SELECT ?q {{ ?q wdt:P279 wd:Q7307127 ; wdt:P703 wd:{} }}",
         bot.species_q()
@@ -295,7 +299,17 @@ fn find_genomic_assembly(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     let res = bot.api.sparql_query(&sparql)?;
     let candidates = bot.api.entities_from_sparql_result(&res, "q");
     bot.genomic_assembly_q = match candidates.len() {
-        0 => create_genomic_assembly(bot)?,
+        0 => {
+            if do_create_if_missing {
+                create_genomic_assembly(bot)?
+            } else {
+                return Err(From::from(format!(
+                    "Can't find genomic assembly for {}, and not allowed to create one:\n{}",
+                    &bot.species_q(),
+                    &sparql
+                )));
+            }
+        }
         1 => candidates[0].to_owned(),
         _ => {
             return Err(From::from(format!(
@@ -447,13 +461,14 @@ mod tests {
     fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>>
     fn load_gff_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
-    fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<Error>>
-    fn find_genomic_assembly(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn get_gene_entities_to_process(bot: &GeneDBot) -> Vec<String>
     fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>>
+
+    NO TEST:
+    create_genomic_assembly (just an executor around diff)
     */
 
     fn json_url() -> &'static str {
@@ -500,5 +515,26 @@ mod tests {
         let expected = vec![("PF3D7_0220200".to_string(), "Q18968266".to_string())];
         let result = sparql_result_to_pairs(&mut api, &j["results"]["bindings"], "genedb", "q");
         assert_eq!(result, expected,)
+    }
+
+    #[test]
+    fn test_find_genomic_assembly() {
+        let mut bot = GeneDBot::new();
+        bot.config.wikidata_id = "Q61779043".to_string();
+        find_genomic_assembly(&mut bot, false).unwrap();
+        assert_eq!(bot.genomic_assembly_q, "Q61815002");
+    }
+
+    #[test]
+    fn test_create_genomic_assembly_item() {
+        let mut bot = GeneDBot::new();
+        bot.config.wikidata_id = "Q61779043".to_string();
+        let item = create_genomic_assembly_item(&mut bot).unwrap();
+        assert_eq!(
+            item.label_in_locale("en"),
+            Some("Plasmodium falciparum 3D7 reference genome")
+        );
+        assert!(item.has_target_entity("P279", "Q7307127"));
+        assert!(item.has_target_entity("P703", "Q61779043"));
     }
 }
