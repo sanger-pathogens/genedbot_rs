@@ -237,7 +237,7 @@ fn add_go_annotation(
         };
 
         let evidence_code = ga.evidence_code().to_string();
-        let evidence_code_q = match bot.evidence_codes.get(&evidence_code) {
+        let evidence_code_q = match bot.evidence.code2q.get(&evidence_code) {
             Some(q) => q.clone(),
             None => {
                 bot.log(

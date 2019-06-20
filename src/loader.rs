@@ -398,27 +398,6 @@ pub fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     Ok(())
 }
 
-pub fn load_evidence_codes(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
-    let sparql = "SELECT DISTINCT ?q ?qLabel ?qAltLabel { ?q wdt:P31 wd:Q23173209 SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\" } }" ;
-    let res = bot.api.sparql_query(&sparql)?;
-    res["results"]["bindings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|b| b["q"]["value"].as_str().is_some())
-        .filter(|b| b["qLabel"]["value"].as_str().is_some())
-        .for_each(|b| {
-            let q = b["q"]["value"].as_str().unwrap();
-            let q = bot.api.extract_entity_from_uri(q).unwrap().to_string();
-            let label = b["qLabel"]["value"].as_str().unwrap_or("").to_string();
-            let alt_label = b["qAltLabel"]["value"].as_str().unwrap_or("").to_string();
-            bot.evidence_codes_labels
-                .insert(bot.normalize_evidence_label(&alt_label), q.clone());
-            bot.evidence_codes.insert(label, q.clone());
-        });
-    Ok(())
-}
-
 fn get_gene_entities_to_process(bot: &GeneDBot) -> Vec<String> {
     match &bot.specific_genes_only {
         Some(_genes) => vec![],
@@ -433,7 +412,8 @@ fn get_gene_entities_to_process(bot: &GeneDBot) -> Vec<String> {
 
 pub fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     let mut items_to_load: Vec<String> = get_gene_entities_to_process(bot).to_vec();
-    bot.evidence_codes
+    bot.evidence
+        .code2q
         .iter()
         .map(|(_, v)| v.to_owned())
         .for_each(|s| items_to_load.push(s));
@@ -447,7 +427,7 @@ pub fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
 pub fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     load_basic_items_chr(bot)?;
     load_basic_items_genes(bot)?;
-    load_evidence_codes(bot)?;
+    bot.evidence.load_from_wikidata(&mut bot.api)?;
     load_basic_items_entities(bot)?;
     Ok(())
 }
@@ -471,7 +451,6 @@ mod tests {
     fn find_genomic_assembly(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
-    fn load_evidence_codes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn get_gene_entities_to_process(bot: &GeneDBot) -> Vec<String>
     fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>>
@@ -522,5 +501,4 @@ mod tests {
         let result = sparql_result_to_pairs(&mut api, &j["results"]["bindings"], "genedb", "q");
         assert_eq!(result, expected,)
     }
-
 }

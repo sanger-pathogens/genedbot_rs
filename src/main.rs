@@ -23,6 +23,7 @@ use wikibase::entity_container::*;
 use wikibase::entity_diff::*;
 use wikibase::*;
 
+pub mod evidence;
 pub mod gene;
 pub mod literature;
 pub mod loader;
@@ -89,8 +90,7 @@ pub struct GeneDBot {
     chr2q: HashMap<String, String>,
     genedb2q: HashMap<String, String>,
     protein_genedb2q: HashMap<String, String>,
-    evidence_codes_labels: HashMap<String, String>,
-    evidence_codes: HashMap<String, String>,
+    evidence: evidence::Evidence,
     alternate_gene_subclasses: HashMap<String, String>,
     other_types: HashMap<String, HashMap<String, Option<bio::io::gff::Record>>>,
     orth_genedb2q: HashMap<String, String>,
@@ -146,8 +146,7 @@ impl GeneDBot {
             chr2q: HashMap::new(),
             genedb2q: HashMap::new(),
             protein_genedb2q: HashMap::new(),
-            evidence_codes_labels: HashMap::new(),
-            evidence_codes: HashMap::new(),
+            evidence: evidence::Evidence::new(),
             other_types: HashMap::new(),
             orth_genedb2q: HashMap::new(),
             orth_genedb2q_taxon: HashMap::new(),
@@ -454,7 +453,8 @@ impl GeneDBot {
                     match kv.get("evidence") {
                         Some(evidence_text) => {
                             match self
-                                .evidence_codes_labels
+                                .evidence
+                                .label2q
                                 .get(&self.normalize_evidence_label(evidence_text))
                             {
                                 Some(ecq) => {
@@ -608,7 +608,8 @@ impl GeneDBot {
         match apk.get("evidence") {
             Some(evidence) => {
                 match self
-                    .evidence_codes_labels
+                    .evidence
+                    .label2q
                     .get(&self.normalize_evidence_label(evidence))
                 {
                     Some(ecq) => qualifiers.push(Snak::new_item("P459", ecq)),
