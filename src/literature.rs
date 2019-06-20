@@ -172,10 +172,10 @@ mod tests {
         );
     }
 
-    // Wrappers, not tested:
-
     #[test]
     fn test_create_paper_item() {
-        // Just a wrapper around WikidataPapers functions
+        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let mut papers = Papers::new(&api);
+        assert_eq!(papers.create_paper_item(&mut vec![]), None)
     }
 }
