@@ -452,10 +452,8 @@ mod tests {
 
     /*
     TODO:
-    fn init(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>>
     fn load_orthologs
-    fn fix_id(id: &str) -> String
     fn set_other_types(bot: &mut GeneDBot, element: &bio::io::gff::Record, id: &str)
     fn process_gff_element(
     fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>>
@@ -463,12 +461,11 @@ mod tests {
     fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
-    fn get_gene_entities_to_process(bot: &GeneDBot) -> Vec<String>
-    fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>>
 
     NO TEST:
-    create_genomic_assembly (just an executor around diff)
+    init: just a wrapper around other functions tested individually
+    create_genomic_assembly: just a wrapper around create_genomic_assembly_item and diff
     */
 
     fn json_url() -> &'static str {
@@ -536,5 +533,52 @@ mod tests {
         );
         assert!(item.has_target_entity("P279", "Q7307127"));
         assert!(item.has_target_entity("P703", "Q61779043"));
+    }
+
+    #[test]
+    fn test_fix_id() {
+        assert_eq!(fix_id("abc:def"), "abc");
+        assert_eq!(fix_id("abc.9"), "abc");
+        assert_eq!(fix_id("abc.123"), "abc.123");
+    }
+
+    #[test]
+    fn test_get_gene_entities_to_process() {
+        let mut bot = GeneDBot::new();
+        bot.genedb2q.insert("foo".to_string(), "Q123".to_string());
+        bot.protein_genedb2q
+            .insert("bar".to_string(), "Q456".to_string());
+        assert_eq!(get_gene_entities_to_process(&bot), vec!["Q123", "Q456"]);
+        bot.specific_genes_only = Some(vec!["Q123".to_string()]);
+        let empty_vec: Vec<String> = vec![];
+        assert_eq!(get_gene_entities_to_process(&bot), empty_vec);
+    }
+
+    #[test]
+    fn test_load_basic_items_entities() {
+        let mut bot = GeneDBot::new();
+        bot.genedb2q
+            .insert("Count Count".to_string(), "Q12345".to_string());
+        bot.protein_genedb2q
+            .insert("Douglas Adams".to_string(), "Q42".to_string());
+        bot.evidence
+            .code2q
+            .insert("Tim Berners-Lee".to_string(), "Q80".to_string());
+        load_basic_items_entities(&mut bot).unwrap();
+        assert!(bot.ec.has_entity("Q12345"));
+        assert!(bot.ec.has_entity("Q42"));
+        assert!(bot.ec.has_entity("Q80"));
+        assert!(!bot.ec.has_entity("Q22686"));
+    }
+
+    #[test]
+    fn test_load_basic_items_chr() {
+        let mut bot = GeneDBot::new();
+        bot.config.wikidata_id = "Q61779043".to_string();
+        load_basic_items_chr(&mut bot).unwrap();
+        assert!(bot.ec.has_entity(bot.config.wikidata_id)); // Force-loaded
+        assert!(bot.ec.has_entity(TMHMM_Q)); // Force-loaded
+        assert!(bot.ec.has_entity("Q61866468")); // Pf3D7_03_v3
+        assert!(!bot.ec.has_entity("Q12345")); // Count Count
     }
 }
