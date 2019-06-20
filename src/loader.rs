@@ -456,14 +456,8 @@ mod tests {
     fn load_orthologs
     fn set_other_types(bot: &mut GeneDBot, element: &bio::io::gff::Record, id: &str)
     fn process_gff_element(
-    fn load_gff_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
-    fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>>
-
-    NO TEST:
-    init: just a wrapper around other functions tested individually
-    create_genomic_assembly: just a wrapper around create_genomic_assembly_item and diff
     */
 
     fn json_url() -> &'static str {
@@ -596,4 +590,36 @@ mod tests {
         );
         // Just testing correct loading, not testing GAF parsing any further here
     }
+
+    #[test]
+    fn test_load_gff_file_from_url() {
+        let mut bot = GeneDBot::new();
+        load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
+        assert!(bot.gff.contains_key("Pfalciparum_REP_25"));
+        assert_eq!(*bot.gff.get("Pfalciparum_REP_25").unwrap().start(), 9313);
+        // Just testing correct loading, not testing GFF parsing any further here
+    }
+
+    // Wrappers, untested:
+
+    #[test]
+    fn test_load_gaf_file() {
+        // Just a wrapper for gaf_url() and load_gaf_file_from_url()
+    }
+
+    #[test]
+    fn test_load_gff_file() {
+        // Just a wrapper for gff_url() and load_gff_file_from_url()
+    }
+
+    #[test]
+    fn test_init() {
+        // just a wrapper around other functions tested individually
+    }
+
+    #[test]
+    fn create_genomic_assembly() {
+        // just a wrapper around create_genomic_assembly_item and diff
+    }
+
 }
