@@ -1,4 +1,7 @@
+use crate::Toolbox;
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use wikibase::*;
 //use std::{error::Error, fmt};
 
 #[derive(Debug, Clone)]
@@ -7,7 +10,7 @@ pub struct Orthologs {
     pub genedb2taxon_q: HashMap<String, String>,
 }
 
-impl crate::Toolbox for Orthologs {}
+impl Toolbox for Orthologs {}
 
 impl Orthologs {
     pub fn new() -> Self {
@@ -15,6 +18,78 @@ impl Orthologs {
             genedb2q: HashMap::new(),
             genedb2taxon_q: HashMap::new(),
         }
+    }
+
+    // Returns (species,genedb_id)
+    pub fn get_from_gff_element(&self, gff: &bio::io::gff::Record) -> Vec<(String, String)> {
+        lazy_static! {
+            static ref RE_ORTH: Regex =
+                Regex::new(r"^\s*(\S*):(\S+)").expect("RE_ORTH does not compile");
+        }
+
+        match gff.attributes().get_vec("orthologous_to") {
+            Some(orths) => {
+                let mut ret: Vec<(String, String)> = vec![];
+                for orth in orths {
+                    let orth = self.fix_attribute_value(orth);
+                    let v: Vec<&str> = orth.split("type=orthologous_to,").collect();
+                    let mut result: Vec<(String, String)> = v
+                        .iter()
+                        .filter(|o| RE_ORTH.is_match(o))
+                        .map(|o| {
+                            RE_ORTH
+                                .captures_iter(o)
+                                .map(|m| return (m[1].to_string(), m[2].to_string()))
+                                .next()
+                        })
+                        .filter(|o| o.is_some())
+                        .map(|o| o.expect("get_orthologs_from_gff_element: [1]"))
+                        .collect();
+                    ret.append(&mut result);
+                }
+                ret
+            }
+            None => vec![],
+        }
+    }
+
+    pub fn process(
+        &mut self,
+        child: &Vec<(String, String)>,
+        gff: &HashMap<String, bio::io::gff::Record>,
+        item: &mut Entity,
+        reference: &Reference,
+    ) {
+        let mut had_that: HashSet<String> = HashSet::new();
+        child
+            .iter()
+            .filter(|o| self.is_product_type(&o.1))
+            .for_each(|o| match gff.get(&o.0) {
+                Some(protein) => {
+                    self.get_from_gff_element(&protein).iter().for_each(
+                        |(_species, protein_genedb_id)| match self.genedb2q.get(protein_genedb_id) {
+                            Some(orth_q) => {
+                                if had_that.contains(orth_q) {
+                                    return;
+                                }
+                                had_that.insert(orth_q.to_string());
+                                match self.genedb2taxon_q.get(protein_genedb_id) {
+                                    Some(orth_q_taxon) => {
+                                        item.add_claim(Statement::new_normal(
+                                            Snak::new_item("P684", orth_q),
+                                            vec![Snak::new_item("P703", orth_q_taxon)],
+                                            vec![reference.clone()],
+                                        ));
+                                    }
+                                    None => {}
+                                }
+                            }
+                            None => {}
+                        },
+                    );
+                }
+                None => {}
+            });
     }
 
     pub fn load(

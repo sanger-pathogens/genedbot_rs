@@ -1,4 +1,4 @@
-use crate::{GeneDBot, TMHMM_Q};
+use crate::{GeneDBot, Toolbox, TMHMM_Q};
 use bio::io::{gaf, gff};
 use libflate::gzip::Decoder;
 use regex::Regex;
@@ -154,7 +154,8 @@ fn process_gff_element(
         None => {}
     }
 
-    bot.get_orthologs_from_gff_element(&element)
+    bot.orthologs
+        .get_from_gff_element(&element)
         .iter()
         .for_each(|x| {
             orth_ids.insert(x.1.to_owned());

@@ -10,8 +10,8 @@ extern crate papers;
 extern crate regex;
 extern crate reqwest;
 
-//use multimap::MultiMap;
-//use std::{thread, time};
+use crate::literature::Papers;
+use crate::orthologs::Orthologs;
 use chrono::Local;
 use config::{Config, File};
 use percent_encoding::percent_decode;
@@ -45,8 +45,6 @@ impl fmt::Display for GeneDBotError {
     }
 }
 
-//#[derive(Debug, Clone)]
-//pub struct Literature {}
 pub type Literature = String;
 
 #[derive(Debug, Clone)]
@@ -84,6 +82,30 @@ pub trait Toolbox {
             .trim_end_matches(';')
             .to_string()
     }
+
+    fn new_time_today(&self) -> Snak {
+        let today = Local::now();
+        Snak::new_time(
+            "P813",
+            &format!("{}", today.format("+%Y-%m-%dT00:00:00Z")),
+            11,
+        )
+    }
+
+    fn get_edit_summary(&self) -> Option<String> {
+        Some("Syncing to GeneDB (V3)".to_string())
+    }
+
+    fn is_product_type(&self, s: &str) -> bool {
+        s == "mRNA" || s == "pseudogenic_transcript"
+    }
+
+    fn is_item(&self, q: &String) -> bool {
+        lazy_static! {
+            static ref RE1: Regex = Regex::new(r"^Q\d+$").expect("is_item: RE1 does not compile");
+        }
+        RE1.is_match(q)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -104,14 +126,14 @@ pub struct GeneDBot {
     evidence: evidence::Evidence,
     alternate_gene_subclasses: HashMap<String, String>,
     other_types: HashMap<String, HashMap<String, Option<bio::io::gff::Record>>>,
-    orthologs: orthologs::Orthologs,
+    orthologs: Orthologs,
     parent2child: HashMap<String, Vec<(String, String)>>,
     xref2prop: HashMap<String, String>,
     aspects: HashMap<String, String>,
     go_term2q: HashMap<String, String>,
     genes2load: Vec<String>,
     pub specific_genes_only: Option<Vec<String>>,
-    papers: literature::Papers,
+    papers: Papers,
 }
 
 impl Toolbox for GeneDBot {}
@@ -160,11 +182,11 @@ impl GeneDBot {
             protein_genedb2q: HashMap::new(),
             evidence: evidence::Evidence::new(),
             other_types: HashMap::new(),
-            orthologs: orthologs::Orthologs::new(),
+            orthologs: Orthologs::new(),
             parent2child: HashMap::new(),
             go_term2q: HashMap::new(),
             specific_genes_only: None,
-            papers: literature::Papers::new(&api),
+            papers: Papers::new(&api),
             genes2load: vec![],
             aspects: vec![("P", "P682"), ("F", "P680"), ("C", "P681")]
                 .iter()
@@ -288,100 +310,6 @@ impl GeneDBot {
             }
             None => panic!("Could not create chromosome item for '{}'", &id),
         }
-    }
-
-    fn new_time_today(&self) -> Snak {
-        let today = Local::now();
-        Snak::new_time(
-            "P813",
-            &format!("{}", today.format("+%Y-%m-%dT00:00:00Z")),
-            11,
-        )
-    }
-
-    fn get_edit_summary(&self) -> Option<String> {
-        Some("Syncing to GeneDB (V3)".to_string())
-    }
-
-    // Returns (species,genedb_id)
-    fn get_orthologs_from_gff_element(&self, gff: &bio::io::gff::Record) -> Vec<(String, String)> {
-        lazy_static! {
-            static ref RE_ORTH: Regex =
-                Regex::new(r"^\s*(\S*):(\S+)").expect("RE_ORTH does not compile");
-        }
-
-        match gff.attributes().get_vec("orthologous_to") {
-            Some(orths) => {
-                let mut ret: Vec<(String, String)> = vec![];
-                for orth in orths {
-                    let orth = self.fix_attribute_value(orth);
-                    let v: Vec<&str> = orth.split("type=orthologous_to,").collect();
-                    let mut result: Vec<(String, String)> = v
-                        .iter()
-                        .filter(|o| RE_ORTH.is_match(o))
-                        .map(|o| {
-                            RE_ORTH
-                                .captures_iter(o)
-                                .map(|m| return (m[1].to_string(), m[2].to_string()))
-                                .next()
-                        })
-                        .filter(|o| o.is_some())
-                        .map(|o| o.expect("get_orthologs_from_gff_element: [1]"))
-                        .collect();
-                    ret.append(&mut result);
-                }
-                ret
-            }
-            None => vec![],
-        }
-    }
-
-    fn is_product_type(&self, s: &str) -> bool {
-        s == "mRNA" || s == "pseudogenic_transcript"
-    }
-
-    fn process_orthologs(&mut self, item: &mut Entity, genedb_id: &String, reference: &Reference) {
-        let mut had_that: HashSet<String> = HashSet::new();
-        self.parent2child
-            .get(genedb_id)
-            .unwrap_or(&vec![])
-            .iter()
-            .filter(|o| self.is_product_type(&o.1))
-            .for_each(|o| match self.gff.get(&o.0) {
-                Some(protein) => {
-                    self.get_orthologs_from_gff_element(&protein)
-                        .iter()
-                        .for_each(|(_species, protein_genedb_id)| {
-                            match self.orthologs.genedb2q.get(protein_genedb_id) {
-                                Some(orth_q) => {
-                                    if had_that.contains(orth_q) {
-                                        return;
-                                    }
-                                    had_that.insert(orth_q.to_string());
-                                    match self.orthologs.genedb2taxon_q.get(protein_genedb_id) {
-                                        Some(orth_q_taxon) => {
-                                            item.add_claim(Statement::new_normal(
-                                                Snak::new_item("P684", orth_q),
-                                                vec![Snak::new_item("P703", orth_q_taxon)],
-                                                vec![reference.clone()],
-                                            ));
-                                        }
-                                        None => {}
-                                    }
-                                }
-                                None => {}
-                            }
-                        });
-                }
-                None => {}
-            });
-    }
-
-    fn is_item(&self, q: &String) -> bool {
-        lazy_static! {
-            static ref RE1: Regex = Regex::new(r"^Q\d+$").expect("is_item: RE1 does not compile");
-        }
-        RE1.is_match(q)
     }
 
     fn process_product_controlled_curation(

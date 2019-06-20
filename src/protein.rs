@@ -1,4 +1,4 @@
-use crate::{GeneDBot, Literature};
+use crate::{GeneDBot, Literature, Toolbox};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use wikibase::entity_diff::*;

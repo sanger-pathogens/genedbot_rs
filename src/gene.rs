@@ -1,6 +1,5 @@
-use crate::{GeneDBot, Literature};
+use crate::{GeneDBot, Literature, Toolbox};
 use std::collections::HashSet;
-
 use wikibase::entity_diff::*;
 use wikibase::*;
 
@@ -140,7 +139,13 @@ pub fn process(bot: &mut GeneDBot, genedb_id: String) {
 
     // Orthologs
     if !protein_entity_ids.is_empty() {
-        bot.process_orthologs(&mut item, &genedb_id, &reference);
+        match bot.parent2child.get(&genedb_id) {
+            Some(child) => {
+                bot.orthologs
+                    .process(&child, &bot.gff, &mut item, &reference);
+            }
+            None => {}
+        }
     }
 
     // Create simple (single-reference-only) statements
