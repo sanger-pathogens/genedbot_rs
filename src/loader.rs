@@ -8,10 +8,15 @@ use wikibase::entity_diff::*;
 use wikibase::*;
 
 pub fn init(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
-    load_gff_file(bot).expect(&format!("Can't load GFF file '{}'", gff_url(bot)));
-    load_gaf_file(bot).expect(&format!("Can't load GAF file '{}'", gaf_url(bot)));
+    println!("1");
+    load_gff_file(bot)?; //.expect(&format!("Can't load GFF file '{}'", gff_url(bot)));
+    println!("2");
+    load_gaf_file(bot)?; //.expect(&format!("Can't load GAF file '{}'", gaf_url(bot)));
+    println!("3");
     find_genomic_assembly(bot)?;
+    println!("4");
     load_basic_items(bot)?;
+    println!("5");
     Ok(())
 }
 
@@ -446,4 +451,15 @@ pub fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     load_evidence_codes(bot)?;
     load_basic_items_entities(bot)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test1() {
+        let bot = GeneDBot::new();
+        println!("{:?}", &bot.genes2load);
+    }
 }

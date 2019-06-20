@@ -110,7 +110,10 @@ impl GeneDBot {
         match std::env::var("http_proxy") {
             Ok(proxy_url) => {
                 if !proxy_url.is_empty() {
-                    builder = builder.proxy(reqwest::Proxy::http(proxy_url.as_str()).unwrap());
+                    builder = builder.proxy(
+                        reqwest::Proxy::http(proxy_url.as_str())
+                            .expect("proxy_url is not a string[1]"),
+                    );
                 }
             }
             _ => {}
@@ -118,14 +121,17 @@ impl GeneDBot {
         match std::env::var("https_proxy") {
             Ok(proxy_url) => {
                 if !proxy_url.is_empty() {
-                    builder = builder.proxy(reqwest::Proxy::https(proxy_url.as_str()).unwrap());
+                    builder = builder.proxy(
+                        reqwest::Proxy::https(proxy_url.as_str())
+                            .expect("proxy_url is not a string[2]"),
+                    );
                 }
             }
             _ => {}
         }
         let api =
             mediawiki::api::Api::new_from_builder("https://www.wikidata.org/w/api.php", builder)
-                .unwrap();
+                .expect("Wikidata API new_from_builder failed");
         Self {
             simulate: false,
             verbose: false,
@@ -185,14 +191,19 @@ impl GeneDBot {
         let config: serde_json::Value = reqwest::get(SPECIES_CONFIG_FILE)?.json()?;
         config
             .as_object()
-            .unwrap()
+            .expect("load_config_file: config is not an object")
             .iter()
             .for_each(|(_group, array)| {
                 array
                     .as_array()
                     .unwrap()
                     .iter()
-                    .filter(|x| x["abbreviation"].as_str().unwrap() == species_key)
+                    .filter(|x| {
+                        x["abbreviation"]
+                            .as_str()
+                            .expect("load_config_file: abbreviation is not a string")
+                            == species_key
+                    })
                     .for_each(|x| self.config = GeneDBotConfig::new_from_json(x))
             });
         Ok(())
@@ -289,7 +300,8 @@ impl GeneDBot {
     // Returns (species,genedb_id)
     fn get_orthologs_from_gff_element(&self, gff: &bio::io::gff::Record) -> Vec<(String, String)> {
         lazy_static! {
-            static ref RE_ORTH: Regex = Regex::new(r"^\s*(\S*):(\S+)").unwrap();
+            static ref RE_ORTH: Regex =
+                Regex::new(r"^\s*(\S*):(\S+)").expect("RE_ORTH does not compile");
         }
 
         match gff.attributes().get_vec("orthologous_to") {
@@ -308,7 +320,7 @@ impl GeneDBot {
                                 .next()
                         })
                         .filter(|o| o.is_some())
-                        .map(|o| o.unwrap())
+                        .map(|o| o.expect("get_orthologs_from_gff_element: [1]"))
                         .collect();
                     ret.append(&mut result);
                 }
@@ -321,7 +333,7 @@ impl GeneDBot {
     fn fix_attribute_value(&self, s: &str) -> String {
         percent_decode(s.as_bytes())
             .decode_utf8()
-            .unwrap()
+            .expect(format!("fix_attribute_value: '{}' is not utf8", s).as_str())
             .trim_end_matches(';')
             .to_string()
     }
@@ -369,7 +381,7 @@ impl GeneDBot {
 
     fn is_item(&self, q: &String) -> bool {
         lazy_static! {
-            static ref RE1: Regex = Regex::new(r"^Q\d+$").unwrap();
+            static ref RE1: Regex = Regex::new(r"^Q\d+$").expect("is_item: RE1 does not compile");
         }
         RE1.is_match(q)
     }
@@ -383,7 +395,8 @@ impl GeneDBot {
         _reference: &Reference,
     ) {
         lazy_static! {
-            static ref RE1: Regex = Regex::new(r"^(.+?)=(.+)$").unwrap();
+            static ref RE1: Regex = Regex::new(r"^(.+?)=(.+)$")
+                .expect("process_product_controlled_curation: RE1 does not compile");
         }
 
         match gff.attributes().get_vec("controlled_curation") {
@@ -511,8 +524,10 @@ impl GeneDBot {
         reference: &Reference,
     ) {
         lazy_static! {
-            static ref RE1: Regex = Regex::new(r"^(.+?)=(.+)$").unwrap();
-            static ref RE2: Regex = Regex::new(r"^term=(.+)$").unwrap();
+            static ref RE1: Regex =
+                Regex::new(r"^(.+?)=(.+)$").expect("process_product: RE1 does not compile");
+            static ref RE2: Regex =
+                Regex::new(r"^term=(.+)$").expect("process_product: RE2 does not compile");
         }
 
         self.process_product_controlled_curation(gff, item, literature, genedb_id, reference);
@@ -618,7 +633,8 @@ impl GeneDBot {
         }
 
         lazy_static! {
-            static ref RE1: Regex = Regex::new(r"^(PMID):(.+)$").unwrap();
+            static ref RE1: Regex =
+                Regex::new(r"^(PMID):(.+)$").expect("set_evidence: RE1 does not compile");
         }
 
         let mut lit_q: Option<String> = None;
@@ -664,7 +680,7 @@ impl GeneDBot {
                 //self.process_protein(&genedb_id, &protein_genedb_id)
             })
             .filter(|entry| entry.is_some())
-            .map(|entry| entry.unwrap())
+            .map(|entry| entry.expect("process_proteins: [1]"))
             .collect()
     }
 
@@ -711,7 +727,7 @@ impl GeneDBot {
     }
 
     fn fix_alias_name(&self, name: &str) -> String {
-        name.split(";").next().unwrap().to_string()
+        name.split(";").next().expect("fix_alias_name").to_string()
     }
 
     fn get_gene_ids_to_process(&self) -> Vec<String> {
@@ -745,16 +761,16 @@ fn run_bot_for_species_and_gene(
     genes: &Option<Vec<String>>,
     lgname: &str,
     lgpass: &str,
-) {
+) -> Result<(), Box<Error>> {
     let mut bot = GeneDBot::new();
     bot.api.set_user_agent("GeneDBot/3.0");
     bot.api.set_edit_delay(Some(500)); // Half a second between edits
     bot.specific_genes_only = genes.to_owned();
-    bot.api.login(lgname, lgpass).unwrap();
-    bot.load_config_file(species_key)
-        .expect("Can't load config file");
-    bot.init().unwrap();
-    bot.run().unwrap();
+    bot.api.login(lgname, lgpass)?;
+    bot.load_config_file(species_key)?;
+    bot.init()?;
+    bot.run()?;
+    Ok(())
 }
 
 fn main() {
@@ -784,9 +800,13 @@ fn main() {
         for (group, species_list) in config.as_object().unwrap() {
             println!("{}", &group);
             for species in species_list.as_array().unwrap() {
-                let species_key = species["abbreviation"].as_str().unwrap().to_string();
+                let conf = GeneDBotConfig::new_from_json(species);
+                let species_key = conf.abbreviation;
                 println!("> {}", &species_key);
-                run_bot_for_species_and_gene(&species_key, &None, &lgname, &lgpass);
+                match run_bot_for_species_and_gene(&species_key, &None, &lgname, &lgpass) {
+                    Ok(_) => {}
+                    Err(e) => println!("RUN FAILED: {:?}", e),
+                }
             }
         }
     } else {
@@ -795,6 +815,6 @@ fn main() {
         } else {
             None
         };
-        run_bot_for_species_and_gene(&species_key, &gene, &lgname, &lgpass);
+        run_bot_for_species_and_gene(&species_key, &gene, &lgname, &lgpass).unwrap();
     }
 }
