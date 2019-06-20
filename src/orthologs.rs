@@ -168,3 +168,17 @@ impl Orthologs {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /*
+    use super::*;
+    #[test]
+    fn test_load_orthologs() {
+        let mut bot = GeneDBot::new();
+        let mut orth_ids: HashSet<String> = HashSet::new();
+        orth_ids.insert("dummy".to_string());
+        load_orthologs(&mut bot, orth_ids).unwrap();
+    }
+    */
+}

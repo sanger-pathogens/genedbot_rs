@@ -395,9 +395,6 @@ mod tests {
 
     /*
     TODO:
-    fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>>
-    fn load_orthologs
-    fn set_other_types(bot: &mut GeneDBot, element: &bio::io::gff::Record, id: &str)
     fn process_gff_element(
     fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>>
     fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>>
@@ -543,15 +540,49 @@ mod tests {
         // Just testing correct loading, not testing GFF parsing any further here
     }
 
-    /*
     #[test]
-    fn test_load_orthologs() {
+    fn test_set_other_types() {
         let mut bot = GeneDBot::new();
-        let mut orth_ids: HashSet<String> = HashSet::new();
-        orth_ids.insert("dummy".to_string());
-        load_orthologs(&mut bot, orth_ids).unwrap();
+        bot.alternate_gene_subclasses
+            .insert("polypeptide_motif".to_string(), "Q12345".to_string());
+        load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
+        bot.gff
+            .clone()
+            .iter()
+            .for_each(|element| match element.1.attributes().get("ID") {
+                Some(id) => set_other_types(&mut bot, &element.1, id),
+                None => {}
+            });
+
+        let other = bot.other_types.get("CDS").unwrap();
+        assert_eq!(other.len(), 2);
+        assert_eq!(other.iter().filter(|n| n.1.is_none()).count(), 2);
+        assert_eq!(
+            other
+                .iter()
+                .filter(|n| n.0 == "PF3D7_0100100" || n.0 == "PF3D7_0100200")
+                .count(),
+            2
+        );
+
+        let other = bot.other_types.get("polypeptide_motif").unwrap();
+        assert_eq!(other.len(), 2);
+        assert_eq!(
+            other
+                .iter()
+                .filter(|n| *n.1.to_owned().unwrap().start() == 29568
+                    || *n.1.to_owned().unwrap().start() == 39847)
+                .count(),
+            2
+        );
+        assert_eq!(
+            other
+                .iter()
+                .filter(|n| n.0 == "chr01" || n.0 == "PF3D7_0100200")
+                .count(),
+            2
+        );
     }
-    */
 
     // Wrappers, untested:
 
