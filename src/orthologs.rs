@@ -188,15 +188,44 @@ mod tests {
         let mut bot = crate::genedbot::GeneDBot::new();
         load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
         let gff_element = bot.gff.get("PF3D7_0100200.1").unwrap();
-        println!("{:#?}", &gff_element);
         let result = o.get_from_gff_element(&gff_element);
-        println!("{:#?}", &result);
         assert!(result
             .iter()
             .any(|r| r.0 == "Preichenowi" && r.1 == "PRCDC_0042600"));
     }
 
-    // process
+    #[test]
+    fn test_process() {
+        let mut o = Orthologs::new();
+        let mut bot = crate::genedbot::GeneDBot::new();
+        load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
+        o.genedb2q
+            .insert("PRCDC_0042600".to_string(), "Q123".to_string());
+        o.genedb2taxon_q
+            .insert("PRCDC_0042600".to_string(), "Q456".to_string());
+        let child = vec![("PF3D7_0100200.1".to_string(), "mRNA".to_string())];
+        let mut item = Entity::new_empty_item();
+        let reference = Reference::new(vec![Snak::new_string("P214", "test")]);
+        let _result = o.process(&child, &bot.gff, &mut item, &reference);
+        assert!(item.has_target_entity("P684", "Q123"));
+        assert_eq!(
+            *item.claims().get(0).unwrap().qualifiers().get(0).unwrap(),
+            Snak::new_item("P703", "Q456")
+        );
+        assert_eq!(
+            *item
+                .claims()
+                .get(0)
+                .unwrap()
+                .references()
+                .get(0)
+                .unwrap()
+                .snaks()
+                .get(0)
+                .unwrap(),
+            Snak::new_string("P214", "test")
+        );
+    }
 
     #[test]
     fn test_load_small() {
