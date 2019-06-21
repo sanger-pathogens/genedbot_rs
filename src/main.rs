@@ -836,6 +836,14 @@ mod tests {
         assert_eq!(bot.config.wikidata_id, "Q61779043");
     }
 
+    #[test]
+    fn test_get_gene_ids_to_process() {
+        let specific = vec!["foo".to_string(), "bar".to_string()];
+        let mut bot = GeneDBot::new();
+        bot.specific_genes_only = Some(specific);
+        assert_eq!(bot.get_gene_ids_to_process(), specific);
+    }
+
     // Toolbox trait functions, instanced in GeneDBot
 
     #[test]
