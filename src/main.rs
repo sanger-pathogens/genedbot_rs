@@ -838,10 +838,21 @@ mod tests {
 
     #[test]
     fn test_get_gene_ids_to_process() {
-        let specific = vec!["foo".to_string(), "bar".to_string()];
+        let specific = vec!["bar".to_string(), "foo".to_string()];
+        let empty_vec: Vec<String> = vec![];
         let mut bot = GeneDBot::new();
-        bot.specific_genes_only = Some(specific);
+        assert_eq!(bot.get_gene_ids_to_process(), empty_vec);
+        bot.specific_genes_only = Some(specific.clone());
         assert_eq!(bot.get_gene_ids_to_process(), specific);
+        bot.specific_genes_only = None;
+        assert_eq!(bot.get_gene_ids_to_process(), empty_vec);
+        bot.genedb2q
+            .insert("foo".to_string(), "foo value".to_string());
+        bot.genedb2q
+            .insert("bar".to_string(), "bar value".to_string());
+        let mut result = bot.get_gene_ids_to_process();
+        result.sort();
+        assert_eq!(result, specific);
     }
 
     // Toolbox trait functions, instanced in GeneDBot
