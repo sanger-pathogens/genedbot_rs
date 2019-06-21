@@ -744,3 +744,46 @@ fn main() {
         run_bot_for_species_and_gene(&species_key, &gene, &lgname, &lgpass).unwrap();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /*
+    TODO
+     fn new() -> Self
+     fn species_q(&self) -> String
+     fn log(&self, genedb_id: &String, message: &str)
+     fn load_config_file(&mut self, species_key: &str) -> Result<(), reqwest::Error>
+     fn set_species(&mut self, species_key: &str)
+     fn references(&self) -> Vec<Reference>
+     fn parent_taxon_q(&self) -> Option<String>
+     fn get_entity_id_for_genedb_id(&self, id: &String) -> Option<String>
+     fn get_entity_for_genedb_id(&mut self, id: &String) -> Option<&wikibase::Entity>
+     fn get_or_create_chromosome_entity(&mut self, id: &str) -> Option<String>
+     fn process_product_controlled_curation(
+     fn process_product(
+     fn set_evidence(
+     fn process_proteins(&mut self, genedb_id: &String) -> Vec<String>
+     fn get_with_from_qualifier(&self, parts: &Vec<&str>) -> Option<Snak>
+     fn get_item_for_go_term(&mut self, go_term: &String) -> Option<String>
+     fn fix_alias_name(&self, name: &str) -> String
+     fn get_gene_ids_to_process(&self) -> Vec<String>
+     fn run(&mut self) -> Result<(), Box<Error>>
+     fn init(&mut self) -> Result<(), Box<Error>>
+    */
+
+    #[test]
+    fn test_config_new_from_json() {
+        let j = json!({"abbreviation":"1","common_name":"2","genus":"3","species":"4","taxon_id":"6","version":"7","wikidata_id":"8"});
+        let c = GeneDBotConfig::new_from_json(&j);
+        assert_eq!(c.abbreviation, "1");
+        assert_eq!(c.common_name, "2");
+        assert_eq!(c.genus, "3");
+        assert_eq!(c.species, "4");
+        assert_eq!(c.strain, ""); // Deliberately did not set strain
+        assert_eq!(c.taxon_id, "6");
+        assert_eq!(c.version, "7");
+        assert_eq!(c.wikidata_id, "8");
+    }
+}
