@@ -751,26 +751,28 @@ mod tests {
 
     /*
     TODO
-     fn new() -> Self
-     fn species_q(&self) -> String
-     fn log(&self, genedb_id: &String, message: &str)
-     fn load_config_file(&mut self, species_key: &str) -> Result<(), reqwest::Error>
-     fn set_species(&mut self, species_key: &str)
-     fn references(&self) -> Vec<Reference>
-     fn parent_taxon_q(&self) -> Option<String>
-     fn get_entity_id_for_genedb_id(&self, id: &String) -> Option<String>
-     fn get_entity_for_genedb_id(&mut self, id: &String) -> Option<&wikibase::Entity>
-     fn get_or_create_chromosome_entity(&mut self, id: &str) -> Option<String>
-     fn process_product_controlled_curation(
-     fn process_product(
-     fn set_evidence(
-     fn process_proteins(&mut self, genedb_id: &String) -> Vec<String>
-     fn get_with_from_qualifier(&self, parts: &Vec<&str>) -> Option<Snak>
-     fn get_item_for_go_term(&mut self, go_term: &String) -> Option<String>
-     fn fix_alias_name(&self, name: &str) -> String
-     fn get_gene_ids_to_process(&self) -> Vec<String>
-     fn run(&mut self) -> Result<(), Box<Error>>
-     fn init(&mut self) -> Result<(), Box<Error>>
+    fn species_q(&self) -> String
+    fn log(&self, genedb_id: &String, message: &str)
+    fn load_config_file(&mut self, species_key: &str) -> Result<(), reqwest::Error>
+    fn set_species(&mut self, species_key: &str)
+    fn references(&self) -> Vec<Reference>
+    fn parent_taxon_q(&self) -> Option<String>
+    fn get_entity_id_for_genedb_id(&self, id: &String) -> Option<String>
+    fn get_entity_for_genedb_id(&mut self, id: &String) -> Option<&wikibase::Entity>
+    fn get_or_create_chromosome_entity(&mut self, id: &str) -> Option<String>
+    fn process_product_controlled_curation(
+    fn process_product(
+    fn set_evidence(
+    fn process_proteins(&mut self, genedb_id: &String) -> Vec<String>
+    fn get_with_from_qualifier(&self, parts: &Vec<&str>) -> Option<Snak>
+    fn get_item_for_go_term(&mut self, go_term: &String) -> Option<String>
+    fn fix_alias_name(&self, name: &str) -> String
+    fn get_gene_ids_to_process(&self) -> Vec<String>
+    fn run(&mut self) -> Result<(), Box<Error>>
+    fn init(&mut self) -> Result<(), Box<Error>>
+
+    TODO trait:
+    fix_attribute_value
     */
 
     #[test]
@@ -785,5 +787,69 @@ mod tests {
         assert_eq!(c.taxon_id, "6");
         assert_eq!(c.version, "7");
         assert_eq!(c.wikidata_id, "8");
+    }
+
+    #[test]
+    fn test_new() {
+        let bot = GeneDBot::new();
+        assert_eq!(
+            bot.api.get_site_info_string("general", "sitename").unwrap(),
+            "Wikidata"
+        );
+        assert_eq!(
+            bot.alternate_gene_subclasses.get("pseudogene").unwrap(),
+            "Q277338"
+        );
+        assert_eq!(bot.aspects.get("F").unwrap(), "P680");
+        assert_eq!(bot.xref2prop.get("UniProtKB").unwrap(), "P352");
+    }
+
+    // Toolbox trait functions, instanced in GeneDBot
+
+    #[test]
+    fn test_is_item() {
+        let bot = GeneDBot::new();
+        assert!(bot.is_item(&"Q12345".to_string()));
+        assert!(!bot.is_item(&"P123".to_string()));
+    }
+
+    #[test]
+    fn test_is_product_type() {
+        let bot = GeneDBot::new();
+        assert!(bot.is_product_type("mRNA"));
+        assert!(bot.is_product_type("pseudogenic_transcript"));
+        assert!(!bot.is_product_type("yo_mom"));
+    }
+
+    #[test]
+    fn test_get_edit_summary() {
+        let bot = GeneDBot::new();
+        assert!(bot.get_edit_summary().is_some()); // Don't really care about potentially changing text
+    }
+
+    #[test]
+    fn test_new_time_today() {
+        let bot = GeneDBot::new();
+        let snak = bot.new_time_today();
+        assert_eq!(snak.property(), "P813");
+        match snak.data_value() {
+            Some(dv) => {
+                match dv.value() {
+                    wikibase::Value::Time(_tv) => {
+                        // Don't care what time
+                    }
+                    other => panic!(format!("Expected time, got {:?}", other)),
+                }
+            }
+            None => panic!("No data value"),
+        }
+    }
+
+    #[test]
+    fn test_fix_attribute_value() {
+        let bot = GeneDBot::new();
+        assert_eq!(bot.fix_attribute_value("foo;"), "foo");
+        assert_eq!(bot.fix_attribute_value("foo"), "foo");
+        assert_eq!(bot.fix_attribute_value(";foo"), ";foo");
     }
 }
