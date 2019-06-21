@@ -754,9 +754,6 @@ mod tests {
     fn species_q(&self) -> String
     fn log(&self, genedb_id: &String, message: &str)
     fn load_config_file(&mut self, species_key: &str) -> Result<(), reqwest::Error>
-    fn set_species(&mut self, species_key: &str)
-    fn references(&self) -> Vec<Reference>
-    fn parent_taxon_q(&self) -> Option<String>
     fn get_entity_id_for_genedb_id(&self, id: &String) -> Option<String>
     fn get_entity_for_genedb_id(&mut self, id: &String) -> Option<&wikibase::Entity>
     fn get_or_create_chromosome_entity(&mut self, id: &str) -> Option<String>
@@ -770,9 +767,6 @@ mod tests {
     fn get_gene_ids_to_process(&self) -> Vec<String>
     fn run(&mut self) -> Result<(), Box<Error>>
     fn init(&mut self) -> Result<(), Box<Error>>
-
-    TODO trait:
-    fix_attribute_value
     */
 
     #[test]
@@ -802,6 +796,44 @@ mod tests {
         );
         assert_eq!(bot.aspects.get("F").unwrap(), "P680");
         assert_eq!(bot.xref2prop.get("UniProtKB").unwrap(), "P352");
+    }
+
+    #[test]
+    fn test_refrences() {
+        let bot = GeneDBot::new();
+        let refs = bot.references();
+        assert_eq!(refs.len(), 1);
+        let snaks = refs[0].snaks();
+        assert_eq!(snaks.len(), 2);
+        assert_eq!(snaks[0], Snak::new_item("P248", "Q5531047"));
+    }
+
+    #[test]
+    fn test_parent_taxon_q() {
+        let mut bot = GeneDBot::new();
+        assert_eq!(bot.parent_taxon_q(), None);
+        bot.config.wikidata_id = "Q61779043".to_string(); // Pf 3D7
+        bot.ec
+            .load_entity(&bot.api, bot.config.wikidata_id.clone())
+            .unwrap();
+        assert_eq!(bot.parent_taxon_q(), Some("Q311383".to_string())); // Pf
+    }
+
+    #[test]
+    fn test_set_species() {
+        let key = "Pfalciparum";
+        let mut bot = GeneDBot::new();
+        assert_eq!(bot.species_key, "");
+        bot.set_species(key);
+        assert_eq!(bot.species_key, key);
+    }
+
+    #[test]
+    fn test_load_config_file() {
+        let key = "Pfalciparum";
+        let mut bot = GeneDBot::new();
+        bot.load_config_file(key).unwrap();
+        assert_eq!(bot.config.wikidata_id, "Q61779043");
     }
 
     // Toolbox trait functions, instanced in GeneDBot
