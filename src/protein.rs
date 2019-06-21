@@ -393,3 +393,8 @@ fn deduplicate_references(references: &mut Vec<Reference>) {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    //use super::*;
+}

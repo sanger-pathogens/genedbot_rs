@@ -2,7 +2,8 @@ use crate::Toolbox;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use wikibase::*;
-//use std::{error::Error, fmt};
+
+const MIN_LARGE_GROUP: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct Orthologs {
@@ -101,7 +102,7 @@ impl Orthologs {
             return Ok(());
         }
 
-        if orth_ids.len() < 1000 {
+        if orth_ids.len() < MIN_LARGE_GROUP {
             self.load_small_group(api, orth_ids)
         } else {
             self.load_large_group(api, orth_ids)
@@ -171,14 +172,58 @@ impl Orthologs {
 
 #[cfg(test)]
 mod tests {
-    /*
     use super::*;
+    use crate::loader::load_gff_file_from_url;
+
     #[test]
-    fn test_load_orthologs() {
-        let mut bot = GeneDBot::new();
-        let mut orth_ids: HashSet<String> = HashSet::new();
-        orth_ids.insert("dummy".to_string());
-        load_orthologs(&mut bot, orth_ids).unwrap();
+    fn test_new() {
+        let o = Orthologs::new();
+        assert_eq!(o.genedb2q.len(), 0);
+        assert_eq!(o.genedb2taxon_q.len(), 0);
     }
-    */
+
+    #[test]
+    fn test_get_from_gff_element() {
+        let o = Orthologs::new();
+        let mut bot = crate::genedbot::GeneDBot::new();
+        load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
+        let gff_element = bot.gff.get("PF3D7_0100200.1").unwrap();
+        println!("{:#?}", &gff_element);
+        let result = o.get_from_gff_element(&gff_element);
+        println!("{:#?}", &result);
+        assert!(result
+            .iter()
+            .any(|r| r.0 == "Preichenowi" && r.1 == "PRCDC_0042600"));
+    }
+
+    // process
+
+    #[test]
+    fn test_load_small() {
+        let mut o = Orthologs::new();
+        let mut api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let mut orth_ids: HashSet<String> = HashSet::new();
+        orth_ids.insert("PF3D7_0102600".to_string());
+        o.load(&mut api, orth_ids).unwrap();
+        assert_eq!(o.genedb2q.len(), 1);
+        assert_eq!(o.genedb2taxon_q.len(), 1);
+        assert_eq!(o.genedb2q.get("PF3D7_0102600").unwrap(), "Q18968367");
+        assert_eq!(o.genedb2taxon_q.get("PF3D7_0102600").unwrap(), "Q61779043");
+    }
+
+    #[test]
+    fn test_load_large() {
+        let mut o = Orthologs::new();
+        let mut api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let mut orth_ids: HashSet<String> = HashSet::new();
+        orth_ids.insert("PF3D7_0102600".to_string());
+        for x in 0..MIN_LARGE_GROUP + 5 {
+            orth_ids.insert("this does not exist".to_string() + &format!("{}", x));
+        }
+        o.load(&mut api, orth_ids).unwrap();
+        assert_eq!(o.genedb2q.len(), 1);
+        assert_eq!(o.genedb2taxon_q.len(), 1);
+        assert_eq!(o.genedb2q.get("PF3D7_0102600").unwrap(), "Q18968367");
+        assert_eq!(o.genedb2taxon_q.get("PF3D7_0102600").unwrap(), "Q61779043");
+    }
 }

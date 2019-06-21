@@ -265,3 +265,8 @@ fn link_items(bot: &mut GeneDBot, property: &str, item: &Entity, target_q: Strin
         bot.ec.apply_diff(&mut bot.api, &diff).is_some();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //use super::*;
+}
