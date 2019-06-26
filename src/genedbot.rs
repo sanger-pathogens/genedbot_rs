@@ -221,6 +221,7 @@ impl GeneDBot {
 
     pub fn log(&self, genedb_id: &String, message: &str) {
         let logfile_result = OpenOptions::new()
+            .create(true)
             .write(true)
             .append(true)
             .open(self.get_log_filename());
