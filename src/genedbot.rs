@@ -227,7 +227,7 @@ impl GeneDBot {
             .open(self.get_log_filename());
         match logfile_result {
             Ok(mut logfile) => logfile
-                .write_fmt(format_args!("{}: {}", genedb_id, message))
+                .write_fmt(format_args!("{}: {}\n", genedb_id, message))
                 .unwrap(),
             _ => println!("{}: {}", genedb_id, message),
         }
