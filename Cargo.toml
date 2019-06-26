@@ -5,12 +5,12 @@ authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
 edition = "2018"
 
 [dependencies]
-mediawiki = "0.1.12"
+mediawiki = "0.1.14"
 #mediawiki = { path = "../mediawiki" }
 #mediawiki={ git="https://github.com/magnusmanske/mediawiki_rust"}
-wikibase = "0.3.7"
+#wikibase = "0.3.7"
 #wikibase = { path = "../wikibase_rs" }
-#wikibase = { git="https://gitlab.com/tobias47n9e/wikibase_rs"}
+wikibase = { git="https://gitlab.com/tobias47n9e/wikibase_rs"}
 #bio = "0.25.0"
 #bio = { path = "../rust-bio" }
 bio = { git="https://github.com/magnusmanske/rust-bio.git" , branch="gaf_file_support" }

@@ -15,6 +15,9 @@ use chrono::Local;
 use percent_encoding::percent_decode;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::fs::OpenOptions;
+use std::io::prelude::*;
 use std::{error::Error, fmt};
 use wikibase::entity_container::*;
 use wikibase::entity_diff::*;
@@ -212,8 +215,21 @@ impl GeneDBot {
         self.config.wikidata_id.to_owned()
     }
 
+    fn get_log_filename(&self) -> String {
+        "logs/".to_string() + &self.species_key + ".log"
+    }
+
     pub fn log(&self, genedb_id: &String, message: &str) {
-        println!("{}: {}", genedb_id, message);
+        let logfile_result = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(self.get_log_filename());
+        match logfile_result {
+            Ok(mut logfile) => logfile
+                .write_fmt(format_args!("{}: {}", genedb_id, message))
+                .unwrap(),
+            _ => println!("{}: {}", genedb_id, message),
+        }
     }
 
     pub fn load_config_file(&mut self, species_key: &str) -> Result<(), reqwest::Error> {
@@ -672,7 +688,13 @@ impl GeneDBot {
     }
 
     pub fn init(&mut self) -> Result<(), Box<Error>> {
-        loader::init(self)
+        loader::init(self)?;
+        match fs::create_dir_all("logs") {
+            _ => match fs::remove_file(self.get_log_filename()) {
+                _ => {}
+            },
+        }
+        Ok(())
     }
 }
 
