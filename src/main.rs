@@ -32,6 +32,8 @@ fn run_bot_for_species_and_gene(
     lgpass: &str,
 ) -> Result<(), Box<Error>> {
     let mut bot = GeneDBot::new();
+    //bot.simulate = true;
+    //bot.verbose = true;
     bot.api_mut().set_user_agent("GeneDBot/3.0");
     bot.api_mut().set_edit_delay(Some(500)); // Half a second between edits
     bot.specific_genes_only = genes.to_owned();

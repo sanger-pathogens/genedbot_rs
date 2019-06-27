@@ -146,7 +146,7 @@ fn protein_edit_validator(diff: &mut EntityDiff, original_item: &Entity) {
     };
     let props = ["P680", "P681", "P682"];
 
-    // Closure should return false to remove the action
+    // Closure should return false to remove the action, keeping the statment in the item
     claim_actions.retain(|action| {
         // Removals only
         if !action["remove"].is_string() {
@@ -162,21 +162,23 @@ fn protein_edit_validator(diff: &mut EntityDiff, original_item: &Entity) {
             Some(claim) => claim,
             None => return true,
         };
-        // Is it a GO term property?
+        // Not a GO term property?
         if !props.contains(&claim.main_snak().property()) {
             return true;
         }
+
+        // This is a GO term property
         let references = claim.references();
-        // No reference? => remove
+        // No reference? => remove statement
         if references.is_empty() {
-            return false;
-        }
-        // More than one reference? => do not remove
-        if references.len() > 1 {
             return true;
         }
-        // Any P1640 (=curator) snaks that are NOT Q5531047 (GeneDB)?
-        references
+        // More than one reference block? => do not remove statement
+        if references.len() > 1 {
+            return false;
+        }
+        // Any P1640 (=curator) snaks that are NOT Q5531047 (GeneDB)? => do remove statement
+        let non_genedb_curators = references
             .get(0)
             .unwrap()
             .snaks()
@@ -189,8 +191,8 @@ fn protein_edit_validator(diff: &mut EntityDiff, original_item: &Entity) {
                 },
                 None => false,
             })
-            .count()
-            > 0
+            .count();
+        non_genedb_curators == 0
     });
 }
 
