@@ -138,23 +138,16 @@ impl Toolbox for GeneDBot {}
 impl GeneDBot {
     pub fn new() -> Self {
         let mut builder = reqwest::ClientBuilder::new();
-        match std::env::var("http_proxy") {
+        match std::env::var("http_proxy")
+            .or(std::env::var("HTTP_PROXY"))
+            .or(std::env::var("https_proxy"))
+            .or(std::env::var("HTTPS_PROXY"))
+        {
             Ok(proxy_url) => {
                 if !proxy_url.is_empty() {
                     builder = builder.proxy(
-                        reqwest::Proxy::http(proxy_url.as_str())
+                        reqwest::Proxy::all(proxy_url.as_str())
                             .expect("proxy_url is not a string[1]"),
-                    );
-                }
-            }
-            _ => {}
-        }
-        match std::env::var("https_proxy") {
-            Ok(proxy_url) => {
-                if !proxy_url.is_empty() {
-                    builder = builder.proxy(
-                        reqwest::Proxy::https(proxy_url.as_str())
-                            .expect("proxy_url is not a string[2]"),
                     );
                 }
             }
