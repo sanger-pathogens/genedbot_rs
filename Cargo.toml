@@ -22,4 +22,5 @@ chrono = "0.4.6"
 lazy_static = "1"
 regex = "1"
 percent-encoding = "1"
+clap = "2.33"
 papers = { git="https://github.com/magnusmanske/papers.git"}

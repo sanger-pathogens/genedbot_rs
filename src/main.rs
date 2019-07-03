@@ -3,6 +3,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate serde_json;
 extern crate chrono;
+extern crate clap;
 extern crate config;
 extern crate libflate;
 extern crate mediawiki;
@@ -11,10 +12,8 @@ extern crate regex;
 extern crate reqwest;
 
 use crate::genedbot::*;
-
+use clap::{App, Arg};
 use config::{Config, File};
-
-use std::env;
 use std::error::Error;
 
 pub mod evidence;
@@ -45,18 +44,42 @@ fn run_bot_for_species_and_gene(
 }
 
 fn main() {
-    let args: Vec<_> = env::args().collect();
-    if args.len() < 2 {
-        println!("Argument (species key) required\n");
-        return;
-    }
+    let matches = App::new("My Super Program")
+        .version("0.1")
+        .author("Magnus Manske <mm6@sanger.ac.uk>")
+        .about("Updates Wikidata from CHADO GFF/GAF files")
+        .arg(
+            Arg::with_name("config")
+                .short("c")
+                .long("config")
+                .value_name("FILE")
+                .required(false)
+                .help("Sets a custom config file")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("gene")
+                .short("g")
+                .long("gene")
+                .required(false)
+                .help("Only process specific gene(s)")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("SPECIES_KEY")
+                .help("Species key, or 'all'")
+                .required(true)
+                .index(1),
+        )
+        .get_matches();
 
+    let ini_file = matches.value_of("config").unwrap_or("bot.ini");
     let mut settings = Config::default();
-    settings.merge(File::with_name("bot.ini")).unwrap();
+    settings.merge(File::with_name(ini_file)).unwrap();
     let lgname = settings.get_str("user.user").unwrap();
     let lgpass = settings.get_str("user.pass").unwrap();
 
-    let species_key = &args[1];
+    let species_key = matches.value_of("SPECIES_KEY").unwrap();
     if species_key == "all" {
         let config: serde_json::Value = reqwest::get(SPECIES_CONFIG_FILE)
             .expect(format!("Config file '{}' can not be loaded", &SPECIES_CONFIG_FILE).as_str())
@@ -81,12 +104,11 @@ fn main() {
             }
         }
     } else {
-        let gene = if args.len() == 3 {
-            Some(vec![args[2].to_string()])
-        } else {
-            None
+        let gene: Option<Vec<String>> = match matches.value_of("gene") {
+            Some(gene) => Some(vec![gene.to_string()]),
+            None => None,
         };
-        run_bot_for_species_and_gene(&species_key, &gene, &lgname, &lgpass).unwrap();
+        run_bot_for_species_and_gene(&species_key.to_string(), &gene, &lgname, &lgpass).unwrap();
     }
 }
 
