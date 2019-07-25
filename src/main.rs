@@ -45,7 +45,7 @@ fn run_bot_for_species_and_gene(
 }
 
 fn main() {
-    let matches = App::new("My Super Program")
+    let matches = App::new("GeneDBot")
         .version("0.1")
         .author("Magnus Manske <mm6@sanger.ac.uk>")
         .about("Updates Wikidata from CHADO GFF/GAF files")
