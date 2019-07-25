@@ -262,7 +262,11 @@ fn link_items(bot: &mut GeneDBot, property: &str, item: &Entity, target_q: Strin
     );
     */
     if !bot.simulate {
-        bot.ec.apply_diff(&mut bot.api, &diff).is_some();
+        // Run, but ignore result
+        match bot.ec.apply_diff(&mut bot.api, &diff) {
+            Some(_) => {}
+            None => {}
+        }
     }
 }
 

@@ -12,6 +12,7 @@ This is Rust code to update Wikidata items from GeneDB GFF and GAF files.
 [user]
 user = GeneDBot
 pass = INSERT_PASSWORD_HERE
+proxy = http://wwwcache.sanger.ac.uk:3128
 ```
 
 # Usage:

@@ -1,3 +1,4 @@
+use std::env;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -78,6 +79,12 @@ fn main() {
     settings.merge(File::with_name(ini_file)).unwrap();
     let lgname = settings.get_str("user.user").unwrap();
     let lgpass = settings.get_str("user.pass").unwrap();
+
+    // Use proxy variable in config, if set
+    match settings.get_str("user.proxy") {
+        Ok(proxy) => env::set_var("http_proxy", proxy),
+        _ => {}
+    }
 
     let species_key = matches.value_of("SPECIES_KEY").unwrap();
     if species_key == "all" {
