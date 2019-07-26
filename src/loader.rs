@@ -1,4 +1,5 @@
 use crate::genedbot::*;
+//use reqwest::header::USER_AGENT;
 //use crate::{GeneDBot, Toolbox};
 use bio::io::{gaf, gff};
 use libflate::gzip::Decoder;
@@ -7,6 +8,20 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use wikibase::entity_diff::*;
 use wikibase::*;
+
+// These work, but are slow for some reason, so tests fail through timeout
+pub static TEST_URL_JSON: &str =
+    "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/dummy.json";
+pub static TEST_URL_GFF_GZ: &str =
+    "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz";
+pub static TEST_URL_GAF_GZ: &str =
+    "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf.gz";
+/*
+// Alternative
+pub static TEST_URL_JSON: &str = "http://magnusmanske.de/genedbot/dummy.json";
+pub static TEST_URL_GFF_GZ: &str = "http://magnusmanske.de/genedbot/test.gff.gz";
+pub static TEST_URL_GAF_GZ: &str = "http://magnusmanske.de/genedbot/test.gaf.gz";
+*/
 
 pub fn init(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     load_gff_file(bot)?; //.expect(&format!("Can't load GFF file '{}'", gff_url(bot)));
@@ -40,22 +55,26 @@ pub fn gaf_url(bot: &GeneDBot) -> String {
 
 pub fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>> {
     let mut orth_ids: HashSet<String> = HashSet::new();
-    if true {
-        let mut res = reqwest::get(url)?;
-        let decoder = Decoder::new(&mut res)?;
-        let mut reader = gff::Reader::new(decoder, gff::GffType::GFF3);
-        for element in reader.records() {
-            match element {
-                Ok(e) => {
-                    process_gff_element(bot, &e, &mut orth_ids);
-                }
-                _ => continue,
+    /*
+    let builder = GeneDBot::get_builder();
+    let client = builder.gzip(false).build()?; // timeout(Duration::from_secs(10)).
+    let mut res = client.get(url).header(USER_AGENT, "genedbot").send()?;
+    let request_builder = client.get(url);
+    */
+    let mut res = reqwest::get(url)?;
+    let decoder = Decoder::new(&mut res)?;
+    let mut reader = gff::Reader::new(decoder, gff::GffType::GFF3);
+    for element in reader.records() {
+        match element {
+            Ok(e) => {
+                process_gff_element(bot, &e, &mut orth_ids);
             }
+            _ => continue,
         }
+    }
 
-        if bot.gff.is_empty() {
-            panic!("Can't get GFF data from {}", url);
-        }
+    if bot.gff.is_empty() {
+        return Err(From::from(format!("Can't get GFF data from {}", url)));
     }
     bot.orthologs.load(&bot.api, orth_ids)
 }
@@ -175,7 +194,7 @@ pub fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<E
         }
     }
     if bot.gaf.is_empty() {
-        panic!("Can't get GAF data from {}", url);
+        return Err(From::from(format!("Can't get GAF data from {}", url)));
     }
     Ok(())
 }
@@ -397,7 +416,7 @@ mod tests {
     */
 
     fn json_url() -> &'static str {
-        "https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/dummy.json"
+        TEST_URL_JSON
     }
 
     #[test]
@@ -421,6 +440,7 @@ mod tests {
             gff_url(&bot),
             "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/test1234/test1234.gff.gz",
         );
+        // NOTE: that URL does not exist, but we are only checking the building of it
     }
 
     #[test]
@@ -429,8 +449,9 @@ mod tests {
         bot.species_key = "test1234".to_string();
         assert_eq!(
             gaf_url(&bot),
-            "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/test1234/test1234.gaf.gz",
+            "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/test1234/test1234.gaf.gz"
         );
+        // NOTE: that URL does not exist, but we are only checking the building of it
     }
 
     #[test]
@@ -513,7 +534,7 @@ mod tests {
     #[test]
     fn test_load_gaf_file_from_url() {
         let mut bot = GeneDBot::new();
-        load_gaf_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf.gz").unwrap();
+        load_gaf_file_from_url(&mut bot, TEST_URL_GAF_GZ).unwrap();
         assert!(bot.gaf.contains_key("PF3D7_0100100.1"));
         assert_eq!(
             bot.gaf
@@ -530,7 +551,7 @@ mod tests {
     #[test]
     fn test_load_gff_file_from_url() {
         let mut bot = GeneDBot::new();
-        load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ).unwrap();
         assert!(bot.gff.contains_key("Pfalciparum_REP_25"));
         assert_eq!(*bot.gff.get("Pfalciparum_REP_25").unwrap().start(), 9313);
         // Just testing correct loading, not testing GFF parsing any further here
@@ -541,7 +562,7 @@ mod tests {
         let mut bot = GeneDBot::new();
         bot.alternate_gene_subclasses
             .insert("polypeptide_motif".to_string(), "Q12345".to_string());
-        load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ).unwrap();
         bot.gff
             .clone()
             .iter()

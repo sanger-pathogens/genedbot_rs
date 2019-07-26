@@ -21,22 +21,25 @@ impl Evidence {
     ) -> Result<(), Box<Error>> {
         let sparql = "SELECT DISTINCT ?q ?qLabel ?qAltLabel { ?q wdt:P31 wd:Q23173209 SERVICE wikibase:label { bd:serviceParam wikibase:language 'en' } }" ;
         let res = api.sparql_query(&sparql)?;
-        res["results"]["bindings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|b| b["q"]["value"].as_str().is_some())
-            .filter(|b| b["qLabel"]["value"].as_str().is_some())
-            .for_each(|b| {
-                let q = b["q"]["value"].as_str().unwrap();
-                let q = api.extract_entity_from_uri(q).unwrap().to_string();
-                let label = b["qLabel"]["value"].as_str().unwrap_or("").to_string();
-                let alt_label = b["qAltLabel"]["value"].as_str().unwrap_or("").to_string();
-                self.label2q
-                    .insert(self.normalize_label(&alt_label), q.clone());
-                self.code2q.insert(label, q.clone());
-            });
-        Ok(())
+        match res["results"]["bindings"].as_array() {
+            Some(bindings) => {
+                bindings
+                    .iter()
+                    .filter(|b| b["q"]["value"].as_str().is_some())
+                    .filter(|b| b["qLabel"]["value"].as_str().is_some())
+                    .for_each(|b| {
+                        let q = b["q"]["value"].as_str().unwrap();
+                        let q = api.extract_entity_from_uri(q).unwrap().to_string();
+                        let label = b["qLabel"]["value"].as_str().unwrap_or("").to_string();
+                        let alt_label = b["qAltLabel"]["value"].as_str().unwrap_or("").to_string();
+                        self.label2q
+                            .insert(self.normalize_label(&alt_label), q.clone());
+                        self.code2q.insert(label, q.clone());
+                    });
+                Ok(())
+            }
+            None => Err(From::from(format!("load_from_wikidata failed"))),
+        }
     }
 
     pub fn normalize_label(&self, s: &String) -> String {

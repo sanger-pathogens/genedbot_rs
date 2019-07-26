@@ -137,25 +137,11 @@ impl Toolbox for GeneDBot {}
 
 impl GeneDBot {
     pub fn new() -> Self {
-        let mut builder = reqwest::ClientBuilder::new();
-        match std::env::var("http_proxy")
-            .or(std::env::var("HTTP_PROXY"))
-            .or(std::env::var("https_proxy"))
-            .or(std::env::var("HTTPS_PROXY"))
-        {
-            Ok(proxy_url) => {
-                if !proxy_url.is_empty() {
-                    builder = builder.proxy(
-                        reqwest::Proxy::all(proxy_url.as_str())
-                            .expect("proxy_url is not a string[1]"),
-                    );
-                }
-            }
-            _ => {}
-        }
-        let api =
-            mediawiki::api::Api::new_from_builder("https://www.wikidata.org/w/api.php", builder)
-                .expect("Wikidata API new_from_builder failed");
+        let api = mediawiki::api::Api::new_from_builder(
+            "https://www.wikidata.org/w/api.php",
+            GeneDBot::get_builder(),
+        )
+        .expect("Wikidata API new_from_builder failed");
         Self {
             simulate: false,
             verbose: false,
@@ -198,6 +184,26 @@ impl GeneDBot {
             .map(|x| (x.0.to_string(), x.1.to_string()))
             .collect(),
         }
+    }
+
+    pub fn get_builder() -> reqwest::ClientBuilder {
+        let mut builder = reqwest::ClientBuilder::new();
+        match std::env::var("http_proxy")
+            .or(std::env::var("HTTP_PROXY"))
+            .or(std::env::var("https_proxy"))
+            .or(std::env::var("HTTPS_PROXY"))
+        {
+            Ok(proxy_url) => {
+                if !proxy_url.is_empty() {
+                    builder = builder.proxy(
+                        reqwest::Proxy::all(proxy_url.as_str())
+                            .expect("proxy_url is not a string[1]"),
+                    );
+                }
+            }
+            _ => {}
+        }
+        builder
     }
 
     pub fn api_mut(self: &mut Self) -> &mut mediawiki::api::Api {
@@ -316,7 +322,7 @@ impl GeneDBot {
                 self.chr2q.insert(id.to_string(), q.clone());
                 Some(q)
             }
-            None => panic!("Could not create chromosome item for '{}'", &id),
+            None => None,
         }
     }
 
@@ -644,14 +650,15 @@ impl GeneDBot {
     }
 
     pub fn get_item_for_go_term(&mut self, go_term: &String) -> Option<String> {
-        if self.go_term2q.contains_key(&go_term.clone()) {
-            return Some(self.go_term2q.get(&go_term.clone()).unwrap().to_string());
+        match self.go_term2q.get(&go_term.clone()) {
+            Some(q) => return Some(q.to_string()),
+            None => {}
         }
         let sparql = format!("SELECT ?q {{ ?q wdt:P686 '{}' }}", &go_term);
         let sparql_result = self.api.sparql_query(&sparql).ok()?;
-        for b in sparql_result["results"]["bindings"].as_array().unwrap() {
+        for b in sparql_result["results"]["bindings"].as_array()? {
             let q = match b["q"]["value"].as_str() {
-                Some(s) => self.api.extract_entity_from_uri(s).unwrap(),
+                Some(s) => self.api.extract_entity_from_uri(s).ok()?,
                 None => continue,
             };
             self.go_term2q.insert(go_term.clone(), q.clone());

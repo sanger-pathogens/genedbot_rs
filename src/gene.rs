@@ -22,10 +22,16 @@ pub fn process(bot: &mut GeneDBot, genedb_id: String) {
         Some(i) => i.clone(),
         None => Entity::new_empty_item(),
     };
-    let chr_q = bot
-        .get_or_create_chromosome_entity(gff.seqname())
-        .unwrap()
-        .to_owned();
+    let chr_q = match bot.get_or_create_chromosome_entity(gff.seqname()) {
+        Some(chr_q) => chr_q.to_owned(),
+        None => {
+            bot.log(
+                &genedb_id,
+                &format!("Could not create chromosome item for '{}'", gff.seqname()),
+            );
+            return;
+        }
+    };
 
     // Labels and aliases
     match gff.attributes().get("Name") {

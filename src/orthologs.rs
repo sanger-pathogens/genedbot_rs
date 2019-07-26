@@ -173,7 +173,7 @@ impl Orthologs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::loader::load_gff_file_from_url;
+    use crate::loader::{load_gff_file_from_url, TEST_URL_GFF_GZ};
 
     #[test]
     fn test_new() {
@@ -186,7 +186,7 @@ mod tests {
     fn test_get_from_gff_element() {
         let o = Orthologs::new();
         let mut bot = crate::genedbot::GeneDBot::new();
-        load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ).unwrap();
         let gff_element = bot.gff.get("PF3D7_0100200.1").unwrap();
         let result = o.get_from_gff_element(&gff_element);
         assert!(result
@@ -198,7 +198,7 @@ mod tests {
     fn test_process() {
         let mut o = Orthologs::new();
         let mut bot = crate::genedbot::GeneDBot::new();
-        load_gff_file_from_url(&mut bot,"https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz").unwrap();
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ).unwrap();
         o.genedb2q
             .insert("PRCDC_0042600".to_string(), "Q123".to_string());
         o.genedb2taxon_q
