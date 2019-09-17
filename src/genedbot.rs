@@ -681,14 +681,14 @@ impl GeneDBot {
         }
     }
 
-    pub fn run(&mut self) -> Result<(), Box<Error>> {
+    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         self.get_gene_ids_to_process()
             .iter()
             .for_each(|genedb_id| gene::process(self, genedb_id.to_string()));
         Ok(())
     }
 
-    pub fn init(&mut self) -> Result<(), Box<Error>> {
+    pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
         loader::init(self)?;
         match fs::create_dir_all("logs") {
             _ => match fs::remove_file(self.get_log_filename()) {

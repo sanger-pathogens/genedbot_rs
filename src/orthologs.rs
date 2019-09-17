@@ -97,7 +97,7 @@ impl Orthologs {
         self: &mut Self,
         api: &mediawiki::api::Api,
         orth_ids: HashSet<String>,
-    ) -> Result<(), Box<::std::error::Error>> {
+    ) -> Result<(), Box<dyn (::std::error::Error)>> {
         if orth_ids.is_empty() {
             return Ok(());
         }
@@ -113,7 +113,7 @@ impl Orthologs {
         self: &mut Self,
         api: &mediawiki::api::Api,
         mut orth_ids: HashSet<String>,
-    ) -> Result<(), Box<::std::error::Error>> {
+    ) -> Result<(), Box<dyn (::std::error::Error)>> {
         // Usually for testing
         let orth_ids: Vec<String> = orth_ids.drain().collect();
         for chunk in orth_ids.chunks(100) {
@@ -143,7 +143,7 @@ impl Orthologs {
         self: &mut Self,
         api: &mediawiki::api::Api,
         orth_ids: HashSet<String>,
-    ) -> Result<(), Box<::std::error::Error>> {
+    ) -> Result<(), Box<dyn (::std::error::Error)>> {
         // Retrieven 'em all and let HashSet sort 'em out...
         let sparql = "SELECT ?q ?genedb ?taxon { ?q wdt:P3382 ?genedb ; wdt:P703 ?taxon }";
         let sparql_result = api.sparql_query(&sparql)?;

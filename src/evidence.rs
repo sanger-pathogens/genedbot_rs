@@ -18,7 +18,7 @@ impl Evidence {
     pub fn load_from_wikidata(
         self: &mut Self,
         api: &mut mediawiki::api::Api,
-    ) -> Result<(), Box<Error>> {
+    ) -> Result<(), Box<dyn Error>> {
         let sparql = "SELECT DISTINCT ?q ?qLabel ?qAltLabel { ?q wdt:P31 wd:Q23173209 SERVICE wikibase:label { bd:serviceParam wikibase:language 'en' } }" ;
         let res = api.sparql_query(&sparql)?;
         match res["results"]["bindings"].as_array() {

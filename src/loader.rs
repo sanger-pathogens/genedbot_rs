@@ -23,7 +23,7 @@ pub static TEST_URL_GFF_GZ: &str = "http://magnusmanske.de/genedbot/test.gff.gz"
 pub static TEST_URL_GAF_GZ: &str = "http://magnusmanske.de/genedbot/test.gaf.gz";
 */
 
-pub fn init(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
+pub fn init(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
     load_gff_file(bot)?; //.expect(&format!("Can't load GFF file '{}'", gff_url(bot)));
     load_gaf_file(bot)?; //.expect(&format!("Can't load GAF file '{}'", gaf_url(bot)));
     find_genomic_assembly(bot, true)?;
@@ -53,7 +53,7 @@ pub fn gaf_url(bot: &GeneDBot) -> String {
     )
 }
 
-pub fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>> {
+pub fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<dyn Error>> {
     let mut orth_ids: HashSet<String> = HashSet::new();
     /*
     let builder = GeneDBot::get_builder();
@@ -177,7 +177,7 @@ fn process_gff_element(
         });
 }
 
-pub fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<Error>> {
+pub fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<dyn Error>> {
     let mut res = reqwest::get(url)?;
     let decoder = Decoder::new(&mut res)?;
     let mut reader = gaf::Reader::new(decoder, gaf::GafType::GAF2);
@@ -199,15 +199,15 @@ pub fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<E
     Ok(())
 }
 
-pub fn load_gff_file(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
+pub fn load_gff_file(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
     load_gff_file_from_url(bot, gff_url(bot).as_str())
 }
 
-pub fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
+pub fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
     load_gaf_file_from_url(bot, gaf_url(bot).as_str())
 }
 
-fn create_genomic_assembly_item(bot: &mut GeneDBot) -> Result<Entity, Box<Error>> {
+fn create_genomic_assembly_item(bot: &mut GeneDBot) -> Result<Entity, Box<dyn Error>> {
     let species_q = bot.species_q();
     let species_i = bot.ec.load_entity(&bot.api, species_q.clone())?;
     let err1 = Err(From::from(format!(
@@ -238,7 +238,7 @@ fn create_genomic_assembly_item(bot: &mut GeneDBot) -> Result<Entity, Box<Error>
     Ok(new_item)
 }
 
-fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<Error>> {
+fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<dyn Error>> {
     let new_item = create_genomic_assembly_item(bot)?;
     let params = EntityDiffParams::all();
     let mut diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
@@ -249,7 +249,7 @@ fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<Error>> {
     }
 }
 
-fn find_genomic_assembly(bot: &mut GeneDBot, do_create_if_missing: bool) -> Result<(), Box<Error>> {
+fn find_genomic_assembly(bot: &mut GeneDBot, do_create_if_missing: bool) -> Result<(), Box<dyn Error>> {
     let sparql = format!(
         "SELECT ?q {{ ?q wdt:P279 wd:Q7307127 ; wdt:P703 wd:{} }}",
         bot.species_q()
@@ -279,7 +279,7 @@ fn find_genomic_assembly(bot: &mut GeneDBot, do_create_if_missing: bool) -> Resu
     Ok(())
 }
 
-fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
+fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
     let sparql = format!(
         "SELECT ?q {{ ?q wdt:P31 wd:Q37748 ; wdt:P703 wd:{} }}",
         &bot.species_q()
@@ -335,7 +335,7 @@ fn sparql_result_to_pairs(
         .collect()
 }
 
-pub fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
+pub fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
     let mut species_list = vec![bot.species_q()];
     match bot.parent_taxon_q() {
         Some(parent_q) => species_list.push(parent_q),
@@ -382,7 +382,7 @@ fn get_gene_entities_to_process(bot: &GeneDBot) -> Vec<String> {
     }
 }
 
-pub fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
+pub fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
     let mut items_to_load: Vec<String> = get_gene_entities_to_process(bot).to_vec();
     bot.evidence
         .code2q
@@ -396,7 +396,7 @@ pub fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
     Ok(())
 }
 
-pub fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<Error>> {
+pub fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
     load_basic_items_chr(bot)?;
     load_basic_items_genes(bot)?;
     bot.evidence.load_from_wikidata(&mut bot.api)?;

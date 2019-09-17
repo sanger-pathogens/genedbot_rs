@@ -30,7 +30,7 @@ fn run_bot_for_species_and_gene(
     genes: &Option<Vec<String>>,
     lgname: &str,
     lgpass: &str,
-) -> Result<(), Box<Error>> {
+) -> Result<(), Box<dyn Error>> {
     let mut bot = GeneDBot::new();
     //bot.simulate = true;
     //bot.verbose = true;
