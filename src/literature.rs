@@ -3,8 +3,10 @@ use papers::orcid2wikidata::Orcid2Wikidata;
 use papers::pubmed2wikidata::Pubmed2Wikidata;
 use papers::semanticscholar2wikidata::Semanticscholar2Wikidata;
 use papers::wikidata_papers::WikidataPapers;
+use papers::wikidata_string_cache::WikidataStringCache;
 use papers::*;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 trait Wikibase {
     fn api(self: &mut Self) -> &mut mediawiki::api::Api;
@@ -111,13 +113,15 @@ impl Papers {
 
     fn create_paper_item(&mut self, ids: &mut Vec<GenericWorkIdentifier>) -> Option<String> {
         println!("Creating paper item for {:?}", &ids);
-        let mut wdp = WikidataPapers::new();
+        let mw_api = Arc::new(RwLock::new(self.api.clone()));
+        let cache = Arc::new(WikidataStringCache::new(mw_api.clone()));
+        let mut wdp = WikidataPapers::new(cache);
         wdp.add_adapter(Box::new(Pubmed2Wikidata::new()));
         wdp.add_adapter(Box::new(Crossref2Wikidata::new()));
         wdp.add_adapter(Box::new(Semanticscholar2Wikidata::new()));
         wdp.add_adapter(Box::new(Orcid2Wikidata::new()));
         let ids = wdp.update_from_paper_ids(&ids);
-        match wdp.create_or_update_item_from_ids(&mut self.api, &ids) {
+        match wdp.create_or_update_item_from_ids(mw_api, &ids) {
             Some(edit_result) => Some(edit_result.q),
             None => None,
         }
