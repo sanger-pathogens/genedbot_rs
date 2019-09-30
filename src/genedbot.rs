@@ -2,7 +2,6 @@ extern crate chrono;
 extern crate config;
 extern crate lazy_static;
 extern crate libflate;
-extern crate mediawiki;
 extern crate papers;
 extern crate regex;
 extern crate reqwest;
@@ -18,6 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
+use std::sync::{Arc, RwLock};
 use std::{error::Error, fmt};
 use wikibase::entity_container::*;
 use wikibase::entity_diff::*;
@@ -116,7 +116,7 @@ pub struct GeneDBot {
     pub species_key: String,
     pub genomic_assembly_q: String,
     pub ec: EntityContainer,
-    pub api: mediawiki::api::Api,
+    pub api: Arc<RwLock<wikibase::mediawiki::api::Api>>,
     pub chr2q: HashMap<String, String>,
     pub genedb2q: HashMap<String, String>,
     pub protein_genedb2q: HashMap<String, String>,
@@ -131,20 +131,23 @@ pub struct GeneDBot {
     pub genes2load: Vec<String>,
     pub specific_genes_only: Option<Vec<String>>,
     pub papers: Papers,
+    pub allow_empty_gaf: bool,
 }
 
 impl Toolbox for GeneDBot {}
 
 impl GeneDBot {
     pub fn new() -> Self {
-        let api = mediawiki::api::Api::new_from_builder(
+        let api = wikibase::mediawiki::api::Api::new_from_builder(
             "https://www.wikidata.org/w/api.php",
             GeneDBot::get_builder(),
         )
         .expect("Wikidata API new_from_builder failed");
+        let api2 = Arc::new(RwLock::new(api.clone()));
         Self {
             simulate: false,
             verbose: false,
+            allow_empty_gaf: false,
             product_term_becomes_label: true,
             gff: HashMap::new(),
             gaf: HashMap::new(),
@@ -152,7 +155,7 @@ impl GeneDBot {
             species_key: "".to_string(),
             genomic_assembly_q: "".to_string(),
             ec: EntityContainer::new(),
-            api: api.clone(),
+            api: api2,
             chr2q: HashMap::new(),
             genedb2q: HashMap::new(),
             protein_genedb2q: HashMap::new(),
@@ -206,8 +209,8 @@ impl GeneDBot {
         builder
     }
 
-    pub fn api_mut(self: &mut Self) -> &mut mediawiki::api::Api {
-        &mut self.api
+    pub fn api(&self) -> Arc<RwLock<wikibase::mediawiki::api::Api>> {
+        self.api.clone()
     }
 
     pub fn species_q(&self) -> String {
@@ -288,9 +291,9 @@ impl GeneDBot {
         }
     }
 
-    pub fn get_entity_for_genedb_id(&mut self, id: &String) -> Option<&wikibase::Entity> {
+    pub fn get_entity_for_genedb_id(&mut self, id: &String) -> Option<wikibase::Entity> {
         match self.get_entity_id_for_genedb_id(&id.to_string()) {
-            Some(q) => self.ec.load_entity(&self.api, q).ok(),
+            Some(q) => self.ec.load_entity(&self.api.read().unwrap(), q).ok(),
             None => None,
         }
     }
@@ -317,7 +320,7 @@ impl GeneDBot {
         let params = EntityDiffParams::all();
         let mut diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
         diff.set_edit_summary(self.get_edit_summary());
-        match self.ec.apply_diff(&mut self.api, &diff) {
+        match self.ec.apply_diff(&mut self.api.write().unwrap(), &diff) {
             Some(q) => {
                 self.chr2q.insert(id.to_string(), q.clone());
                 Some(q)
@@ -655,10 +658,10 @@ impl GeneDBot {
             None => {}
         }
         let sparql = format!("SELECT ?q {{ ?q wdt:P686 '{}' }}", &go_term);
-        let sparql_result = self.api.sparql_query(&sparql).ok()?;
+        let sparql_result = self.api.read().unwrap().sparql_query(&sparql).ok()?;
         for b in sparql_result["results"]["bindings"].as_array()? {
             let q = match b["q"]["value"].as_str() {
-                Some(s) => self.api.extract_entity_from_uri(s).ok()?,
+                Some(s) => self.api.read().unwrap().extract_entity_from_uri(s).ok()?,
                 None => continue,
             };
             self.go_term2q.insert(go_term.clone(), q.clone());
@@ -741,7 +744,11 @@ mod tests {
     fn test_new() {
         let bot = GeneDBot::new();
         assert_eq!(
-            bot.api.get_site_info_string("general", "sitename").unwrap(),
+            bot.api
+                .read()
+                .unwrap()
+                .get_site_info_string("general", "sitename")
+                .unwrap(),
             "Wikidata"
         );
         assert_eq!(
@@ -768,7 +775,7 @@ mod tests {
         assert_eq!(bot.parent_taxon_q(), None);
         bot.config.wikidata_id = "Q61779043".to_string(); // Pf 3D7
         bot.ec
-            .load_entity(&bot.api, bot.config.wikidata_id.clone())
+            .load_entity(&bot.api.read().unwrap(), bot.config.wikidata_id.clone())
             .unwrap();
         assert_eq!(bot.parent_taxon_q(), Some("Q311383".to_string())); // Pf
     }

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 trait Wikibase {
-    fn api(self: &mut Self) -> &mut mediawiki::api::Api;
+    fn api(self: &mut Self) -> &mut wikibase::mediawiki::api::Api;
 
     fn search_wikibase(&mut self, query: &String) -> Vec<String> {
         let params: HashMap<_, _> = vec![
@@ -35,17 +35,17 @@ trait Wikibase {
 #[derive(Debug, Clone)]
 pub struct Papers {
     paper2q: HashMap<(String, String), String>,
-    api: mediawiki::api::Api,
+    api: wikibase::mediawiki::api::Api,
 }
 
 impl Wikibase for Papers {
-    fn api(self: &mut Self) -> &mut mediawiki::api::Api {
+    fn api(self: &mut Self) -> &mut wikibase::mediawiki::api::Api {
         &mut self.api
     }
 }
 
 impl Papers {
-    pub fn new(api: &mediawiki::api::Api) -> Self {
+    pub fn new(api: &wikibase::mediawiki::api::Api) -> Self {
         Papers {
             paper2q: HashMap::new(),
             api: api.clone(),
@@ -134,14 +134,14 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
         let papers = Papers::new(&api);
         assert!(papers.paper2q.is_empty());
     }
 
     #[test]
     fn test_api() {
-        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
         let mut papers = Papers::new(&api);
         assert_eq!(
             papers
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_search_wikibase() {
-        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
         let mut papers = Papers::new(&api);
         let result =
             papers.search_wikibase(&"\"Charles Darwin\" haswbstatement:P31=Q5".to_string());
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_get_or_create_item() {
-        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
         let mut papers = Papers::new(&api);
         assert_eq!(
             papers.get_or_create_item(&"PMID".to_string(), &"27998271".to_string()),
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_create_paper_item() {
-        let api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
         let mut papers = Papers::new(&api);
         assert_eq!(papers.create_paper_item(&mut vec![]), None)
     }

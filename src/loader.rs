@@ -1,4 +1,5 @@
 use crate::genedbot::*;
+use std::sync::{Arc, RwLock};
 //use reqwest::header::USER_AGENT;
 //use crate::{GeneDBot, Toolbox};
 use bio::io::{gaf, gff};
@@ -12,7 +13,9 @@ use wikibase::*;
 // These work, but are slow for some reason, so tests fail through timeout
 pub static TEST_URL_JSON: &str =
     "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/dummy.json";
-pub static TEST_URL_GFF_GZ: &str =
+pub static TEST_URL_GFF_GZ1: &str =
+    "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/Pfalciparum/Pfalciparum.gff.gz";
+pub static TEST_URL_GFF_GZ2: &str =
     "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz";
 pub static TEST_URL_GAF_GZ: &str =
     "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf.gz";
@@ -76,7 +79,7 @@ pub fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<d
     if bot.gff.is_empty() {
         return Err(From::from(format!("Can't get GFF data from {}", url)));
     }
-    bot.orthologs.load(&bot.api, orth_ids)
+    bot.orthologs.load(&bot.api.read().unwrap(), orth_ids)
 }
 
 fn fix_id(id: &str) -> String {
@@ -193,7 +196,7 @@ pub fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<d
             _ => continue,
         }
     }
-    if bot.gaf.is_empty() {
+    if bot.gaf.is_empty() && !bot.allow_empty_gaf {
         return Err(From::from(format!("Can't get GAF data from {}", url)));
     }
     Ok(())
@@ -209,7 +212,9 @@ pub fn load_gaf_file(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
 
 fn create_genomic_assembly_item(bot: &mut GeneDBot) -> Result<Entity, Box<dyn Error>> {
     let species_q = bot.species_q();
-    let species_i = bot.ec.load_entity(&bot.api, species_q.clone())?;
+    let species_i = bot
+        .ec
+        .load_entity(&bot.api.read().unwrap(), species_q.clone())?;
     let err1 = Err(From::from(format!(
         "'{}' has no P225 string value",
         &species_q
@@ -243,19 +248,26 @@ fn create_genomic_assembly(bot: &mut GeneDBot) -> Result<String, Box<dyn Error>>
     let params = EntityDiffParams::all();
     let mut diff = EntityDiff::new(&Entity::new_empty_item(), &new_item, &params);
     diff.set_edit_summary(bot.get_edit_summary());
-    match bot.ec.apply_diff(&mut bot.api, &diff) {
+    match bot.ec.apply_diff(&mut bot.api.write().unwrap(), &diff) {
         Some(q) => Ok(q),
         None => Err(From::from("Could not create genomic assembly item")),
     }
 }
 
-fn find_genomic_assembly(bot: &mut GeneDBot, do_create_if_missing: bool) -> Result<(), Box<dyn Error>> {
+fn find_genomic_assembly(
+    bot: &mut GeneDBot,
+    do_create_if_missing: bool,
+) -> Result<(), Box<dyn Error>> {
     let sparql = format!(
         "SELECT ?q {{ ?q wdt:P279 wd:Q7307127 ; wdt:P703 wd:{} }}",
         bot.species_q()
     );
-    let res = bot.api.sparql_query(&sparql)?;
-    let candidates = bot.api.entities_from_sparql_result(&res, "q");
+    let res = bot.api.read().unwrap().sparql_query(&sparql)?;
+    let candidates = bot
+        .api
+        .read()
+        .unwrap()
+        .entities_from_sparql_result(&res, "q");
     bot.genomic_assembly_q = match candidates.len() {
         0 => {
             if do_create_if_missing {
@@ -284,11 +296,15 @@ fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
         "SELECT ?q {{ ?q wdt:P31 wd:Q37748 ; wdt:P703 wd:{} }}",
         &bot.species_q()
     );
-    let res = bot.api.sparql_query(&sparql)?;
-    let mut items = bot.api.entities_from_sparql_result(&res, "q");
+    let res = bot.api.read().unwrap().sparql_query(&sparql)?;
+    let mut items = bot
+        .api
+        .read()
+        .unwrap()
+        .entities_from_sparql_result(&res, "q");
     items.push(bot.species_q());
     items.push(TMHMM_Q.to_string());
-    bot.ec.load_entities(&bot.api, &items)?;
+    bot.ec.load_entities(&bot.api.read().unwrap(), &items)?;
 
     items
         .iter()
@@ -309,7 +325,7 @@ fn load_basic_items_chr(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
 }
 
 fn sparql_result_to_pairs(
-    api: &mut mediawiki::api::Api,
+    api: Arc<RwLock<wikibase::mediawiki::api::Api>>,
     j: &serde_json::Value,
     k1: &str,
     k2: &str,
@@ -322,11 +338,15 @@ fn sparql_result_to_pairs(
         .map(|b| {
             let v1 = b[k1]["value"].as_str().unwrap();
             let v1 = api
+                .read()
+                .unwrap()
                 .extract_entity_from_uri(v1)
                 .unwrap_or(v1.to_string())
                 .to_string();
             let v2 = b[k2]["value"].as_str().unwrap();
             let v2 = api
+                .read()
+                .unwrap()
                 .extract_entity_from_uri(v2)
                 .unwrap_or(v2.to_string())
                 .to_string();
@@ -355,16 +375,17 @@ pub fn load_basic_items_genes(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> 
 
     // Genes
     let sparql = format!("SELECT DISTINCT ?q ?genedb {{ {} . {} . ?q wdt:P31 ?gene_types ; wdt:P703 ?species ; wdt:P3382 ?genedb }}",&species_list,&gene_p31) ;
-    let res = bot.api.sparql_query(&sparql)?;
-    bot.genedb2q = sparql_result_to_pairs(&mut bot.api, &res["results"]["bindings"], "genedb", "q")
-        .into_iter()
-        .collect();
+    let res = bot.api.read().unwrap().sparql_query(&sparql)?;
+    bot.genedb2q =
+        sparql_result_to_pairs(bot.api.clone(), &res["results"]["bindings"], "genedb", "q")
+            .into_iter()
+            .collect();
 
     // Proteins
     let sparql = format!("SELECT DISTINCT ?q ?genedb {{ {} . ?q wdt:P31 wd:Q8054 ; wdt:P703 ?species ; wdt:P3382 ?genedb }}",&species_list) ;
-    let res = bot.api.sparql_query(&sparql)?;
+    let res = bot.api.read().unwrap().sparql_query(&sparql)?;
     bot.protein_genedb2q =
-        sparql_result_to_pairs(&mut bot.api, &res["results"]["bindings"], "genedb", "q")
+        sparql_result_to_pairs(bot.api.clone(), &res["results"]["bindings"], "genedb", "q")
             .into_iter()
             .collect();
     Ok(())
@@ -392,14 +413,16 @@ pub fn load_basic_items_entities(bot: &mut GeneDBot) -> Result<(), Box<dyn Error
     if bot.verbose {
         println!("Loading {} items", items_to_load.len());
     }
-    bot.ec.load_entities(&bot.api, &items_to_load)?;
+    bot.ec
+        .load_entities(&bot.api.read().unwrap(), &items_to_load)?;
     Ok(())
 }
 
 pub fn load_basic_items(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
     load_basic_items_chr(bot)?;
     load_basic_items_genes(bot)?;
-    bot.evidence.load_from_wikidata(&mut bot.api)?;
+    bot.evidence
+        .load_from_wikidata(&mut bot.api.write().unwrap())?;
     load_basic_items_entities(bot)?;
     Ok(())
 }
@@ -456,10 +479,12 @@ mod tests {
 
     #[test]
     fn test_sparql_result_to_pairs() {
-        let mut api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let api = Arc::new(RwLock::new(
+            wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap(),
+        ));
         let j = json!({"head":{"vars":["q","genedb"]},"results":{"bindings":[{"q":{"type":"uri","value":"http://www.wikidata.org/entity/Q18968266"},"genedb":{"datatype":"http://www.w3.org/2001/XMLSchema#string","type":"literal","value":"PF3D7_0220200"}}]}});
         let expected = vec![("PF3D7_0220200".to_string(), "Q18968266".to_string())];
-        let result = sparql_result_to_pairs(&mut api, &j["results"]["bindings"], "genedb", "q");
+        let result = sparql_result_to_pairs(api.clone(), &j["results"]["bindings"], "genedb", "q");
         assert_eq!(result, expected,)
     }
 
@@ -551,9 +576,9 @@ mod tests {
     #[test]
     fn test_load_gff_file_from_url() {
         let mut bot = GeneDBot::new();
-        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ).unwrap();
-        assert!(bot.gff.contains_key("Pfalciparum_REP_25"));
-        assert_eq!(*bot.gff.get("Pfalciparum_REP_25").unwrap().start(), 9313);
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ1).unwrap();
+        assert!(bot.gff.contains_key("PF3D7_API02700.1"));
+        assert_eq!(*bot.gff.get("PF3D7_API02700.1").unwrap().start(), 7559);
         // Just testing correct loading, not testing GFF parsing any further here
     }
 
@@ -562,7 +587,7 @@ mod tests {
         let mut bot = GeneDBot::new();
         bot.alternate_gene_subclasses
             .insert("polypeptide_motif".to_string(), "Q12345".to_string());
-        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ).unwrap();
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ2).unwrap();
         bot.gff
             .clone()
             .iter()

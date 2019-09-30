@@ -202,7 +202,7 @@ pub fn process(bot: &mut GeneDBot, genedb_id: String) {
             );
         }
         if !bot.simulate {
-            match bot.ec.apply_diff(&mut bot.api, &diff) {
+            match bot.ec.apply_diff(&mut bot.api.write().unwrap(), &diff) {
                 Some(q) => {
                     //thread::sleep(time::Duration::from_millis(500));
                     bot.genedb2q.insert(genedb_id.to_string(), q);
@@ -226,10 +226,10 @@ fn link_protein_to_gene(bot: &mut GeneDBot, protein_q: &String, gene_q: &String)
     if !bot.is_item(gene_q) || !bot.is_item(protein_q) {
         return;
     }
-    match bot
-        .ec
-        .load_entities(&bot.api, &vec![gene_q.clone(), protein_q.clone()])
-    {
+    match bot.ec.load_entities(
+        &bot.api.read().unwrap(),
+        &vec![gene_q.clone(), protein_q.clone()],
+    ) {
         Ok(_) => {}
         _ => return,
     }
@@ -269,7 +269,7 @@ fn link_items(bot: &mut GeneDBot, property: &str, item: &Entity, target_q: Strin
     */
     if !bot.simulate {
         // Run, but ignore result
-        match bot.ec.apply_diff(&mut bot.api, &diff) {
+        match bot.ec.apply_diff(&mut bot.api.write().unwrap(), &diff) {
             Some(_) => {}
             None => {}
         }
