@@ -418,6 +418,7 @@ impl GeneDBot {
                     // Literature
                     match kv.get("db_xref") {
                         Some(xref) => {
+                            //println!("1: {:?}", &xref);
                             let parts: Vec<&str> = xref.split(':').collect();
                             if parts.len() == 2 {
                                 let paper_item = self.papers.get_or_create_item(
@@ -459,6 +460,45 @@ impl GeneDBot {
         }
     }
 
+    fn string2hash(
+        &self,
+        s: &String,
+        separator1: &str,
+        separator2: &str,
+    ) -> HashMap<String, String> {
+        s.split(separator1)
+            .filter_map(|s| {
+                let parts: Vec<String> = s.split(separator2).map(|s| s.to_string()).collect();
+                if parts.len() < 2 {
+                    return None;
+                }
+                let parts = parts.split_first()?;
+                let key = parts.0;
+                let value = parts.1.join(separator2).to_string();
+                Some((key.to_string(), value))
+            })
+            .collect()
+    }
+
+    fn maybe_set_label(&self, item: &mut Entity, genedb_id: &String, m_fixed: &String) {
+        match item.label_in_locale("en") {
+            Some(label) => {
+                if self.product_term_becomes_label {
+                    if label == genedb_id {
+                        item.set_label(LocaleString::new("en", &m_fixed));
+                    } else {
+                        item.add_alias(LocaleString::new("en", &m_fixed));
+                    }
+                } else {
+                    item.add_alias(LocaleString::new("en", &m_fixed));
+                }
+            }
+            None => {
+                item.set_label(LocaleString::new("en", &m_fixed));
+            }
+        }
+    }
+
     pub fn process_product(
         &mut self,
         gff: &bio::io::gff::Record,
@@ -471,7 +511,7 @@ impl GeneDBot {
             static ref RE1: Regex =
                 Regex::new(r"^(.+?)=(.+)$").expect("process_product: RE1 does not compile");
             static ref RE2: Regex =
-                Regex::new(r"^term=(.+)$").expect("process_product: RE2 does not compile");
+                Regex::new(r"^.*\bterm=(.+)$").expect("process_product: RE2 does not compile");
         }
 
         self.process_product_controlled_curation(gff, item, literature, genedb_id, reference);
@@ -495,7 +535,6 @@ impl GeneDBot {
             None => {}
         }
 
-        let mut apk: HashMap<String, String> = HashMap::new();
         let products = match gff.attributes().get_vec("product") {
             Some(products) => products,
             None => return,
@@ -505,32 +544,17 @@ impl GeneDBot {
             let parts: Vec<&str> = product.split(',').collect();
             for part in parts {
                 let part = self.fix_attribute_value(part);
-                RE1.captures_iter(&part).for_each(|m| {
-                    apk.insert(m[1].to_string(), m[2].to_string());
-                });
-                RE2.captures_iter(&part).for_each(|m| {
-                    let m_fixed = self.fix_alias_name(&m[1]);
-                    match item.label_in_locale("en") {
-                        Some(label) => {
-                            if self.product_term_becomes_label {
-                                if label == genedb_id {
-                                    item.set_label(LocaleString::new("en", &m_fixed));
-                                } else {
-                                    item.add_alias(LocaleString::new("en", &m_fixed));
-                                }
-                            } else {
-                                item.add_alias(LocaleString::new("en", &m_fixed));
-                            }
-                        }
-                        None => {
-                            item.set_label(LocaleString::new("en", &m_fixed));
-                        }
+                let sub_parts = self.string2hash(&part, ";", "=");
+                self.set_evidence(&sub_parts, item, literature);
+
+                match sub_parts.get("term") {
+                    Some(term) => {
+                        self.maybe_set_label(item, genedb_id, term);
                     }
-                });
+                    None => {}
+                }
             }
         });
-
-        self.set_evidence(&apk, item, literature);
     }
 
     fn set_evidence(
@@ -548,6 +572,15 @@ impl GeneDBot {
             self.new_time_today(),
         ]);
         let mut qualifiers = vec![];
+
+        match apk.get("rank") {
+            Some(rank) => {
+                // Not preferred
+                let rank: f64 = rank.parse().unwrap_or(0.0);
+                qualifiers.push(Snak::new_quantity("P1352", rank));
+            }
+            None => {} // Preferred
+        }
 
         match apk.get("evidence") {
             Some(evidence) => match self
@@ -583,6 +616,7 @@ impl GeneDBot {
         let mut lit_q: Option<String> = None;
         match apk.get("db_xref") {
             Some(xref) => {
+                //println!("2: {:?}", xref);
                 RE1.captures_iter(xref).for_each(|m| {
                     let k = m[1].to_string();
                     let v = m[2].to_string();

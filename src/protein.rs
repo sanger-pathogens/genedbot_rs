@@ -257,6 +257,7 @@ fn add_go_annotation(
         let mut literature_sources: Vec<Snak> = vec![];
         for (k, values) in ga.db_ref().iter_all() {
             for v in values {
+                //println!("3: {}: {:?}", &k, &values);
                 match k.as_str() {
                         "GO_REF" => {
                             literature_sources.push(Snak::new_string("P854", &format!("https://github.com/geneontology/go-site/blob/master/metadata/gorefs/goref-{}.md",&v)))
@@ -277,6 +278,7 @@ fn add_go_annotation(
                             }
                         }
                     }
+                //println!("5:{:?}", &literature_sources);
 
                 // Qualifiers
                 let mut qualifiers = vec![Snak::new_item("P459", &evidence_code_q)];
