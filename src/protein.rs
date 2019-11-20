@@ -84,7 +84,7 @@ pub fn process(
 
     // Apply diff
     let my_props = vec![
-        //"P1343", // Decribed by source; CAREFUL!
+        "P1343", // Decribed by source; CAREFUL!
         "P703",  // Found in taxon
         "P1057", // Chromosome
         "P2548", // Strand orientation
@@ -115,11 +115,11 @@ pub fn process(
                 "\nPROTEIN {}/{:?}:\n{}",
                 &protein_genedb_id,
                 diff.edit_target(),
-                serde_json::to_string(&diff.actions()).unwrap()
+                serde_json::to_string_pretty(&diff.actions()).unwrap()
             );
         }
         if !bot.simulate {
-            match bot.ec.apply_diff(&mut bot.api, &diff) {
+            match bot.ec.apply_diff(&mut bot.api.write().unwrap(), &diff) {
                 Some(q) => {
                     //thread::sleep(time::Duration::from_millis(500));
                     bot.genedb2q.insert(protein_genedb_id.to_string(), q);
@@ -144,7 +144,7 @@ fn protein_edit_validator(diff: &mut EntityDiff, original_item: &Entity) {
         Some(c) => c,
         None => return,
     };
-    let props = ["P680", "P681", "P682"];
+    let props = ["P680", "P681", "P682", "P1343"];
 
     // Closure should return false to remove the action, keeping the statment in the item
     claim_actions.retain(|action| {
@@ -206,7 +206,6 @@ fn add_go_annotation(
     lazy_static! {
         static ref RE_DATE: Regex = Regex::new(r"^(\d{4})(\d{2})(\d{2})$").unwrap();
     }
-
     let protein_genedb_id = gff.attributes()["ID"].clone();
     let gaf = match bot.gaf.get(&protein_genedb_id) {
         Some(gaf) => gaf.clone(),
@@ -257,6 +256,7 @@ fn add_go_annotation(
         let mut literature_sources: Vec<Snak> = vec![];
         for (k, values) in ga.db_ref().iter_all() {
             for v in values {
+                //println!("3: {}: {:?}", &k, &values);
                 match k.as_str() {
                         "GO_REF" => {
                             literature_sources.push(Snak::new_string("P854", &format!("https://github.com/geneontology/go-site/blob/master/metadata/gorefs/goref-{}.md",&v)))
@@ -277,6 +277,7 @@ fn add_go_annotation(
                             }
                         }
                     }
+                //println!("5:{:?}", &literature_sources);
 
                 // Qualifiers
                 let mut qualifiers = vec![Snak::new_item("P459", &evidence_code_q)];
@@ -375,6 +376,7 @@ fn add_go_annotation(
     }
 
     new_go_claims.iter().for_each(|(_key, claim)| {
+        println!("{:?}", &claim);
         item.add_claim(Statement::new_normal(
             claim.0.to_owned(),
             claim.2.to_owned(),

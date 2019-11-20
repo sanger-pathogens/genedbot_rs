@@ -95,7 +95,7 @@ impl Orthologs {
 
     pub fn load(
         self: &mut Self,
-        api: &mediawiki::api::Api,
+        api: &wikibase::mediawiki::api::Api,
         orth_ids: HashSet<String>,
     ) -> Result<(), Box<dyn (::std::error::Error)>> {
         if orth_ids.is_empty() {
@@ -111,7 +111,7 @@ impl Orthologs {
 
     fn load_small_group(
         self: &mut Self,
-        api: &mediawiki::api::Api,
+        api: &wikibase::mediawiki::api::Api,
         mut orth_ids: HashSet<String>,
     ) -> Result<(), Box<dyn (::std::error::Error)>> {
         // Usually for testing
@@ -141,7 +141,7 @@ impl Orthologs {
 
     fn load_large_group(
         self: &mut Self,
-        api: &mediawiki::api::Api,
+        api: &wikibase::mediawiki::api::Api,
         orth_ids: HashSet<String>,
     ) -> Result<(), Box<dyn (::std::error::Error)>> {
         // Retrieven 'em all and let HashSet sort 'em out...
@@ -173,7 +173,7 @@ impl Orthologs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::loader::{load_gff_file_from_url, TEST_URL_GFF_GZ};
+    use crate::loader::{load_gff_file_from_url, TEST_URL_GFF_GZ2};
 
     #[test]
     fn test_new() {
@@ -186,7 +186,7 @@ mod tests {
     fn test_get_from_gff_element() {
         let o = Orthologs::new();
         let mut bot = crate::genedbot::GeneDBot::new();
-        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ).unwrap();
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ2).unwrap();
         let gff_element = bot.gff.get("PF3D7_0100200.1").unwrap();
         let result = o.get_from_gff_element(&gff_element);
         assert!(result
@@ -198,7 +198,7 @@ mod tests {
     fn test_process() {
         let mut o = Orthologs::new();
         let mut bot = crate::genedbot::GeneDBot::new();
-        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ).unwrap();
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ2).unwrap();
         o.genedb2q
             .insert("PRCDC_0042600".to_string(), "Q123".to_string());
         o.genedb2taxon_q
@@ -230,7 +230,8 @@ mod tests {
     #[test]
     fn test_load_small() {
         let mut o = Orthologs::new();
-        let mut api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let mut api =
+            wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
         let mut orth_ids: HashSet<String> = HashSet::new();
         orth_ids.insert("PF3D7_0102600".to_string());
         o.load(&mut api, orth_ids).unwrap();
@@ -243,7 +244,8 @@ mod tests {
     #[test]
     fn test_load_large() {
         let mut o = Orthologs::new();
-        let mut api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
+        let mut api =
+            wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").unwrap();
         let mut orth_ids: HashSet<String> = HashSet::new();
         orth_ids.insert("PF3D7_0102600".to_string());
         for x in 0..MIN_LARGE_GROUP + 5 {
