@@ -35,11 +35,11 @@ pub fn init(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn get_text_from_url(url: &str) -> Result<String, reqwest::Error> {
-    Ok(reqwest::get(url)?.text()?)
+    Ok(reqwest::blocking::get(url)?.text()?)
 }
 
 pub fn get_json_from_url(url: &str) -> Result<serde_json::Value, reqwest::Error> {
-    Ok(reqwest::get(url)?.json()?)
+    Ok(reqwest::blocking::get(url)?.json()?)
 }
 
 pub fn gff_url(bot: &GeneDBot) -> String {
@@ -64,7 +64,7 @@ pub fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<d
     let mut res = client.get(url).header(USER_AGENT, "genedbot").send()?;
     let request_builder = client.get(url);
     */
-    let mut res = reqwest::get(url)?;
+    let mut res = reqwest::blocking::get(url)?;
     let decoder = Decoder::new(&mut res)?;
     let mut reader = gff::Reader::new(decoder, gff::GffType::GFF3);
     for element in reader.records() {
@@ -181,7 +181,7 @@ fn process_gff_element(
 }
 
 pub fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<dyn Error>> {
-    let mut res = reqwest::get(url)?;
+    let mut res = reqwest::blocking::get(url)?;
     let decoder = Decoder::new(&mut res)?;
     let mut reader = gaf::Reader::new(decoder, gaf::GafType::GAF2);
     for element in reader.records() {
@@ -647,5 +647,4 @@ mod tests {
     fn create_genomic_assembly() {
         // just a wrapper around create_genomic_assembly_item and diff
     }
-
 }

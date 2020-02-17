@@ -10,7 +10,7 @@ edition = "2018"
 wikibase = { git="https://gitlab.com/tobias47n9e/wikibase_rs"}
 
 bio = { git="https://github.com/magnusmanske/rust-bio.git" , branch="gaf_file_support" }
-reqwest = "*"
+reqwest = { version = "0.10", features = ["blocking", "json"] }
 serde_json = "1"
 libflate = "*"
 config = "*"

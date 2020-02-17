@@ -31,7 +31,7 @@ fn run_bot_for_species_and_gene(
     lgpass: &str,
 ) -> Result<(), Box<dyn Error>> {
     let mut bot = GeneDBot::new();
-    bot.simulate = true;
+    //bot.simulate = true;
     bot.verbose = true;
     bot.api().write().unwrap().set_user_agent("GeneDBot/3.0");
     bot.api().write().unwrap().set_edit_delay(Some(500)); // Half a second between edits
@@ -87,7 +87,7 @@ fn main() {
 
     let species_key = matches.value_of("SPECIES_KEY").unwrap();
     if species_key == "all" {
-        let config: serde_json::Value = reqwest::get(SPECIES_CONFIG_FILE)
+        let config: serde_json::Value = reqwest::blocking::get(SPECIES_CONFIG_FILE)
             .expect(format!("Config file '{}' can not be loaded", &SPECIES_CONFIG_FILE).as_str())
             .json()
             .expect(

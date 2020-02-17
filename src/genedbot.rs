@@ -189,8 +189,8 @@ impl GeneDBot {
         }
     }
 
-    pub fn get_builder() -> reqwest::ClientBuilder {
-        let mut builder = reqwest::ClientBuilder::new();
+    pub fn get_builder() -> reqwest::blocking::ClientBuilder {
+        let mut builder = reqwest::blocking::ClientBuilder::new();
         match std::env::var("http_proxy")
             .or(std::env::var("HTTP_PROXY"))
             .or(std::env::var("https_proxy"))
@@ -237,7 +237,7 @@ impl GeneDBot {
 
     pub fn load_config_file(&mut self, species_key: &str) -> Result<(), reqwest::Error> {
         self.set_species(species_key);
-        let config: serde_json::Value = reqwest::get(SPECIES_CONFIG_FILE)?.json()?;
+        let config: serde_json::Value = reqwest::blocking::get(SPECIES_CONFIG_FILE)?.json()?;
         config
             .as_object()
             .expect("load_config_file: config is not an object")
