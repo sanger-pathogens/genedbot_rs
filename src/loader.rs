@@ -13,8 +13,7 @@ use wikibase::*;
 // These work, but are slow for some reason, so tests fail through timeout
 pub static TEST_URL_JSON: &str =
     "https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/dummy.json";
-pub static TEST_URL_GFF_GZ2: &str =
-    "https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz";
+pub static TEST_URL_GFF_GZ2: &str = "http://magnusmanske.de/genedbot/test.gff.gz";
 pub static TEST_URL_GAF_GZ: &str =
     "https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf.gz";
 /*
