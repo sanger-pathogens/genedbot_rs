@@ -12,13 +12,10 @@ use wikibase::*;
 
 // These work, but are slow for some reason, so tests fail through timeout
 pub static TEST_URL_JSON: &str =
-    "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/dummy.json";
-pub static TEST_URL_GFF_GZ1: &str =
-    "ftp://ftp.sanger.ac.uk/pub/genedb/releases/latest/Pfalciparum/Pfalciparum.gff.gz";
-pub static TEST_URL_GFF_GZ2: &str =
-    "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gff.gz";
+    "https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/dummy.json";
+pub static TEST_URL_GFF_GZ2: &str = "http://magnusmanske.de/genedbot/test.gff.gz";
 pub static TEST_URL_GAF_GZ: &str =
-    "http://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf.gz";
+    "https://raw.githubusercontent.com/sanger-pathogens/genedbot_rs/master/test_files/test.gaf.gz";
 /*
 // Alternative
 pub static TEST_URL_JSON: &str = "http://magnusmanske.de/genedbot/dummy.json";
@@ -35,11 +32,11 @@ pub fn init(bot: &mut GeneDBot) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn get_text_from_url(url: &str) -> Result<String, reqwest::Error> {
-    Ok(reqwest::get(url)?.text()?)
+    Ok(reqwest::blocking::get(url)?.text()?)
 }
 
 pub fn get_json_from_url(url: &str) -> Result<serde_json::Value, reqwest::Error> {
-    Ok(reqwest::get(url)?.json()?)
+    Ok(reqwest::blocking::get(url)?.json()?)
 }
 
 pub fn gff_url(bot: &GeneDBot) -> String {
@@ -58,13 +55,7 @@ pub fn gaf_url(bot: &GeneDBot) -> String {
 
 pub fn load_gff_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<dyn Error>> {
     let mut orth_ids: HashSet<String> = HashSet::new();
-    /*
-    let builder = GeneDBot::get_builder();
-    let client = builder.gzip(false).build()?; // timeout(Duration::from_secs(10)).
-    let mut res = client.get(url).header(USER_AGENT, "genedbot").send()?;
-    let request_builder = client.get(url);
-    */
-    let mut res = reqwest::get(url)?;
+    let mut res = reqwest::blocking::get(url)?;
     let decoder = Decoder::new(&mut res)?;
     let mut reader = gff::Reader::new(decoder, gff::GffType::GFF3);
     for element in reader.records() {
@@ -181,7 +172,7 @@ fn process_gff_element(
 }
 
 pub fn load_gaf_file_from_url(bot: &mut GeneDBot, url: &str) -> Result<(), Box<dyn Error>> {
-    let mut res = reqwest::get(url)?;
+    let mut res = reqwest::blocking::get(url)?;
     let decoder = Decoder::new(&mut res)?;
     let mut reader = gaf::Reader::new(decoder, gaf::GafType::GAF2);
     for element in reader.records() {
@@ -576,9 +567,9 @@ mod tests {
     #[test]
     fn test_load_gff_file_from_url() {
         let mut bot = GeneDBot::new();
-        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ1).unwrap();
-        assert!(bot.gff.contains_key("PF3D7_API02700.1"));
-        assert_eq!(*bot.gff.get("PF3D7_API02700.1").unwrap().start(), 7559);
+        load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ2).unwrap();
+        assert!(bot.gff.contains_key("PF3D7_0100200.1"));
+        assert_eq!(*bot.gff.get("PF3D7_0100200.1").unwrap().start(), 38982);
         // Just testing correct loading, not testing GFF parsing any further here
     }
 
@@ -647,5 +638,4 @@ mod tests {
     fn create_genomic_assembly() {
         // just a wrapper around create_genomic_assembly_item and diff
     }
-
 }

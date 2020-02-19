@@ -376,7 +376,7 @@ fn add_go_annotation(
     }
 
     new_go_claims.iter().for_each(|(_key, claim)| {
-        println!("{:?}", &claim);
+        //println!("{:?}", &claim);
         item.add_claim(Statement::new_normal(
             claim.0.to_owned(),
             claim.2.to_owned(),
