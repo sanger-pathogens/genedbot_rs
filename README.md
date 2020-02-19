@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/sanger-pathogens/genedbot.svg?branch=master)](https://travis-ci.org/sanger-pathogens/genedbot) [![codecov](https://codecov.io/gh/sanger-pathogens/genedbot/branch/master/graph/badge.svg)](https://codecov.io/gh/sanger-pathogens/genedbot)
+[![Build Status](https://travis-ci.org/sanger-pathogens/genedbot.svg)](https://travis-ci.org/sanger-pathogens/genedbot) [![codecov](https://codecov.io/gh/sanger-pathogens/genedbot/branch/master/graph/badge.svg)](https://codecov.io/gh/sanger-pathogens/genedbot)
 
 This is Rust code to update Wikidata items from GeneDB GFF and GAF files.
 
