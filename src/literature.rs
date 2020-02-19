@@ -160,6 +160,8 @@ mod tests {
             papers.search_wikibase(&"\"Charles Darwin\" haswbstatement:P31=Q5".to_string());
         assert!(result.iter().any(|s| s == "Q1035"));
         assert!(!result.iter().any(|s| s == "Q1064071"));
+        let result = papers.search_wikibase(&"c7igheesgbsu6gvwuvcwtfvwy4crwvb".to_string());
+        assert!(result.is_empty());
     }
 
     #[test]
@@ -170,6 +172,7 @@ mod tests {
             papers.get_or_create_item(&"PMID".to_string(), &"27998271".to_string()),
             Some("Q28030910".to_string())
         );
+        assert_eq!(papers.paper2q.len(), 1);
         assert_eq!(
             papers.get_or_create_item(&"PMID".to_string(), &"0".to_string()),
             None

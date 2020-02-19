@@ -561,16 +561,27 @@ mod tests {
                 .go_id(),
             "GO:0009405"
         );
-        // Just testing correct loading, not testing GAF parsing any further here
+
+        // Testing broken URL
+        assert!(load_gaf_file_from_url(&mut bot, "https://this.is.not.a.valid/url").is_err());
+
+        // Testing valid URL with non-GFF file
+        assert!(load_gaf_file_from_url(&mut bot, "http://magnusmanske.de/test.txt").is_err());
     }
 
     #[test]
     fn test_load_gff_file_from_url() {
         let mut bot = GeneDBot::new();
+        // Testing valid URL
         load_gff_file_from_url(&mut bot, TEST_URL_GFF_GZ2).unwrap();
         assert!(bot.gff.contains_key("PF3D7_0100200.1"));
         assert_eq!(*bot.gff.get("PF3D7_0100200.1").unwrap().start(), 38982);
-        // Just testing correct loading, not testing GFF parsing any further here
+
+        // Testing broken URL
+        assert!(load_gff_file_from_url(&mut bot, "https://this.is.not.a.valid/url").is_err());
+
+        // Testing valid URL with non-GFF file
+        assert!(load_gff_file_from_url(&mut bot, "http://magnusmanske.de/test.txt").is_err());
     }
 
     #[test]
